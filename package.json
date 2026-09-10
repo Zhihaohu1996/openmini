@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "description": "OpenMini — an open-source, developer-first runtime for secure mini applications.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@12.3.4",
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "scripts": {
     "dev": "pnpm --filter @openmini/host dev",

@@ -1,0 +1,22 @@
+{
+  "name": "@openmini/sdk",
+  "version": "0.1.0",
+  "description": "OpenMini SDK for mini-app developers (capability APIs). Not yet implemented — Phase 1 scaffold only.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@openmini/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}

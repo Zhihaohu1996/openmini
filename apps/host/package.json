@@ -1,0 +1,31 @@
+{
+  "name": "@openmini/host",
+  "private": true,
+  "version": "0.1.0",
+  "description": "OpenMini host application — the shell that will load and run mini-apps.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@openmini/runtime": "workspace:*",
+    "@openmini/sdk": "workspace:*",
+    "@openmini/shared": "workspace:*",
+    "@openmini/ui": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.5"
+  }
+}

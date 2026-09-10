@@ -4,12 +4,16 @@
   "description": "OpenMini command-line tooling. No commands implemented yet — Phase 1 scaffold only.",
   "license": "MIT",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "bin": {
     "openmini": "./dist/cli.js"
   },
-  "files": ["dist"],
+  "files": ["src", "dist"],
+  "publishConfig": {
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",

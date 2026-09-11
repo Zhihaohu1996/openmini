@@ -26,3 +26,4 @@ Thumbs.db
 
 # Claude Code local, machine-specific state (not shared project config)
 .claude/settings.local.json
+.claude/scheduled_tasks.lock

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openmini.dev/schema/openmini.schema.json",
+  "title": "OpenMini Mini App Manifest (v1)",
+  "$comment": "Editor/documentation aid only — NOT the authoritative validator. The authoritative implementation is @openmini/manifest's TypeScript validateManifest()/parseManifest(). This schema is a best-effort structural approximation, verified against the same fixtures via schema.test.ts, but some rules (e.g. full path-traversal safety) are only loosely approximated here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "version", "entry", "permissions"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Manifest schema version. Phase 2 supports exactly version 1."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z]([a-z0-9-]*[a-z0-9])?(\\.[a-z]([a-z0-9-]*[a-z0-9])?)+$",
+      "description": "Stable, lowercase, reverse-domain-style application identifier, e.g. \"com.openmini.restaurant\"."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "Human-readable application name."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$",
+      "description": "Full Semantic Versioning 2.0.0 string, e.g. \"0.1.0\"."
+    },
+    "entry": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "anyOf": [
+          { "pattern": "^[/\\\\]" },
+          { "pattern": "^[a-zA-Z]:[/\\\\]" },
+          { "pattern": "^[a-zA-Z][a-zA-Z0-9+.-]*://" },
+          { "pattern": "(^|[/\\\\])\\.\\.($|[/\\\\])" }
+        ]
+      },
+      "description": "Relative, application-internal entry path, e.g. \"index.html\". Must not be absolute, a URL, root-absolute, or contain path traversal."
+    },
+    "permissions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": ["storage", "navigation", "user"]
+      },
+      "description": "Requested capability permissions. May be empty."
+    }
+  }
+}

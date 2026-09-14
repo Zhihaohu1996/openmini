@@ -1,7 +1,7 @@
 {
   "name": "@openmini/runtime",
   "version": "0.1.0",
-  "description": "OpenMini mini-app runtime (sandbox, lifecycle, message bridge). Not yet implemented — Phase 1 scaffold only.",
+  "description": "OpenMini mini-app runtime (sandbox, lifecycle, message bridge).",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -17,6 +17,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@openmini/manifest": "workspace:*",
     "@openmini/shared": "workspace:*"
   },
   "devDependencies": {

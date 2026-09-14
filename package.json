@@ -13,6 +13,7 @@
     "dev": "pnpm --filter @openmini/host dev",
     "build": "pnpm -r --workspace-concurrency=1 build",
     "test": "pnpm -r test",
+    "e2e": "playwright test",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

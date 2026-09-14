@@ -153,23 +153,37 @@ describe('createMiniAppSandbox', () => {
   });
 
   it('reaches error on handshake timeout when no ack ever arrives', async () => {
-    const fakeIframe = createFakeIframe();
-    const deps = createDeps(fakeIframe);
-    const sandbox = createMiniAppSandbox(
-      {
-        manifest: makeManifest(),
-        resourceProvider: okProvider,
-        container: createContainer(),
-        handshakeTimeoutMs: 5,
-      },
-      deps,
-    );
+    // Fake timers make this deterministic: the previous version raced a real
+    // 5ms setTimeout against four chained 0ms setTimeout ticks, which is not
+    // guaranteed to resolve in either order and was observed to flake under
+    // real-world timer/event-loop scheduling (e.g. on CI runners). No
+    // MessageChannel/MessagePort messaging happens in this test (no ack is
+    // ever sent), so faking timers here doesn't interact with any real
+    // cross-port message delivery.
+    vi.useFakeTimers();
+    try {
+      const fakeIframe = createFakeIframe();
+      const deps = createDeps(fakeIframe);
+      const sandbox = createMiniAppSandbox(
+        {
+          manifest: makeManifest(),
+          resourceProvider: okProvider,
+          container: createContainer(),
+          handshakeTimeoutMs: 5000,
+        },
+        deps,
+      );
 
-    await sandbox.start();
-    fakeIframe.fireLoad();
-    await tick(4);
+      await sandbox.start();
+      fakeIframe.fireLoad();
+      expect(sandbox.state).toBe('ready');
 
-    expect(sandbox.state).toBe('error');
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(sandbox.state).toBe('error');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('treats a second load event as a self-navigation and moves a running session to error', async () => {

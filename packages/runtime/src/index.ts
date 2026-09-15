@@ -36,3 +36,13 @@ export type {
   SandboxState,
   SandboxStateListener,
 } from './sandbox/types';
+
+export { createBridgeDispatcher } from './bridge/dispatcher';
+export type { BridgeDispatcher, BridgeDispatcherOptions } from './bridge/dispatcher';
+export { computePermittedNamespaces, getMethodNamespace, isNamespaceKnown } from './bridge/capabilities';
+export { BridgeInvalidParamsError } from './bridge/errors';
+export { createStorageHandlers } from './bridge/handlers/storage';
+export { createNavigationHandlers } from './bridge/handlers/navigation';
+export { createUserHandlers } from './bridge/handlers/user';
+export type { StubUserProfile } from './bridge/handlers/user';
+export type { BridgeHandlerContext, BridgeMethodHandler, BridgeHandlerRegistry } from './bridge/types';

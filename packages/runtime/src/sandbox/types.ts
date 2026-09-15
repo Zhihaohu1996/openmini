@@ -37,6 +37,14 @@ export interface SandboxOptions {
   container: HTMLElement;
   /** Defaults to 5000ms. */
   handshakeTimeoutMs?: number;
+  /**
+   * Invoked exactly once, when the sandbox reaches `running`, handing over
+   * the already-handshaken `MessagePort` for bridge/RPC use (see
+   * @openmini/runtime's bridge/dispatcher.ts). The sandbox retains
+   * ownership of closing this port on `destroy()`/`error` — callers must
+   * not close it themselves.
+   */
+  onBridgeReady?: (port: MessagePort) => void;
 }
 
 export type SandboxStateListener = (state: SandboxState, info?: SandboxErrorInfo) => void;

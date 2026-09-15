@@ -7,6 +7,9 @@ coverage/
 *.log
 .vite/
 
+# Generated fixture output (rebuilt by build:fixtures before dev/build/test)
+apps/host/src/miniapp/fixtures/bridge-demo/generated/
+
 # Playwright test artifacts
 playwright-report/
 test-results/

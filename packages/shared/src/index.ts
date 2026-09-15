@@ -2,8 +2,27 @@
  * @openmini/shared
  *
  * Shared types and utilities used across OpenMini packages.
- * Intentionally minimal in Phase 1 — populated as later phases need
- * cross-package contracts (e.g. manifest types, permission schemas).
  */
 
 export const OPENMINI_SHARED_VERSION = '0.1.0';
+
+export { generateRandomId } from './id';
+
+export {
+  OPENMINI_BRIDGE_CHANNEL,
+  OPENMINI_BRIDGE_VERSION,
+  BRIDGE_NAMESPACES,
+  BRIDGE_ERROR_CODES,
+  isBridgeRequestEnvelope,
+  isBridgeResponseEnvelope,
+  isBridgeCloseAckEnvelope,
+} from './bridge/protocol';
+export type {
+  BridgeNamespace,
+  BridgeErrorCode,
+  BridgeRequestEnvelope,
+  BridgeSuccessResponseEnvelope,
+  BridgeErrorResponseEnvelope,
+  BridgeResponseEnvelope,
+  BridgeCloseAckEnvelope,
+} from './bridge/protocol';

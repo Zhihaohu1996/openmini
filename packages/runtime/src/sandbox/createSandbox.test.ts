@@ -112,6 +112,33 @@ describe('createMiniAppSandbox', () => {
     expect(states).toEqual(['loading', 'ready', 'running']);
   });
 
+  it('invokes onBridgeReady exactly once, with the handshaken port, when reaching running', async () => {
+    const fakeIframe = createFakeIframe();
+    const deps = createDeps(fakeIframe);
+    const onBridgeReady = vi.fn();
+    const sandbox = createMiniAppSandbox(
+      { manifest: makeManifest(), resourceProvider: okProvider, container: createContainer(), onBridgeReady },
+      deps,
+    );
+
+    await sandbox.start();
+    fakeIframe.fireLoad();
+    expect(onBridgeReady).not.toHaveBeenCalled();
+
+    const sentTransfer = fakeIframe.contentWindowPostMessage.mock.calls[0]?.[2] as MessagePort[];
+    sentTransfer[0]?.postMessage({
+      channel: OPENMINI_MESSAGE_CHANNEL,
+      version: OPENMINI_PROTOCOL_VERSION,
+      sessionId: sandbox.sessionId,
+      type: 'handshake-ack',
+    });
+    await tick(3);
+
+    expect(sandbox.state).toBe('running');
+    expect(onBridgeReady).toHaveBeenCalledTimes(1);
+    expect(onBridgeReady.mock.calls[0]?.[0]).toBeInstanceOf(MessagePort);
+  });
+
   it('transitions to error when the resource provider fails to resolve the entry', async () => {
     const fakeIframe = createFakeIframe();
     const deps = createDeps(fakeIframe);

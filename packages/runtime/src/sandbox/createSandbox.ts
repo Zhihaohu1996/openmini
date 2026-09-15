@@ -196,6 +196,9 @@ class MiniAppSandboxImpl implements MiniAppSandbox {
     }
     if (this._state === 'ready') {
       this.setState('running');
+      if (this.port) {
+        this.options.onBridgeReady?.(this.port);
+      }
     }
   };
 

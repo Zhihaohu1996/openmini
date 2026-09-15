@@ -1,11 +1,15 @@
+import { OPENMINI_BRIDGE_CHANNEL, OPENMINI_BRIDGE_VERSION, generateRandomId } from '@openmini/shared';
+
 /**
  * Minimal, versioned envelope for the one-time MessageChannel bootstrap
- * handshake. Phase 3 defines only `handshake-init`/`handshake-ack` — no
- * RPC, method dispatch, or capability fields. Those are deferred to the
- * future JS Bridge phase; this envelope is the substrate it will build on.
+ * handshake. Handshake-init/-ack are the only types defined here; the
+ * Phase 4 JS Bridge's request/response/close-ack envelopes are a separate,
+ * distinct family (see @openmini/shared's bridge/protocol.ts) that shares
+ * only these same channel/version constants and travels over the same
+ * post-handshake port.
  */
-export const OPENMINI_MESSAGE_CHANNEL = 'openmini' as const;
-export const OPENMINI_PROTOCOL_VERSION = 1 as const;
+export const OPENMINI_MESSAGE_CHANNEL = OPENMINI_BRIDGE_CHANNEL;
+export const OPENMINI_PROTOCOL_VERSION = OPENMINI_BRIDGE_VERSION;
 
 export type OpenMiniMessageType = 'handshake-init' | 'handshake-ack';
 
@@ -34,11 +38,7 @@ export function isOpenMiniEnvelope(value: unknown): value is OpenMiniEnvelope {
 }
 
 export function generateSessionId(): string {
-  const globalCrypto = (globalThis as { crypto?: Crypto }).crypto;
-  if (globalCrypto && typeof globalCrypto.randomUUID === 'function') {
-    return globalCrypto.randomUUID();
-  }
-  return `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return generateRandomId();
 }
 
 /**

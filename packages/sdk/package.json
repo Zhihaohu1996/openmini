@@ -1,7 +1,7 @@
 {
   "name": "@openmini/sdk",
   "version": "0.1.0",
-  "description": "OpenMini SDK for mini-app developers (capability APIs). Not yet implemented — Phase 1 scaffold only.",
+  "description": "OpenMini SDK for mini-app developers (capability APIs).",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./src/index.ts",

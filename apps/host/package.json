@@ -6,10 +6,11 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build:fixtures": "node scripts/build-bridge-demo-fixture.mjs",
+    "dev": "pnpm run build:fixtures && vite",
+    "build": "pnpm run build:fixtures && tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "pnpm run build:fixtures && vitest run",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -25,6 +26,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
+    "esbuild": "^0.28.2",
     "jsdom": "^30.0.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",

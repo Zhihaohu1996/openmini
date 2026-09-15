@@ -1,4 +1,4 @@
-import { createMiniAppSandbox, gateManifest } from '@openmini/runtime';
+import { createBridgeDispatcher, createMiniAppSandbox, gateManifest } from '@openmini/runtime';
 import type { MiniAppResourceProvider, MiniAppSandbox, SandboxState } from '@openmini/runtime';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -46,6 +46,9 @@ export function MiniAppHost({ manifestJson, resourceProvider }: MiniAppHostProps
       manifest,
       resourceProvider,
       container: containerRef.current,
+      onBridgeReady: (port) => {
+        createBridgeDispatcher({ manifest, sandbox, port });
+      },
     });
     sandboxRef.current = sandbox;
     sandbox.onStateChange((next) => setState(next));

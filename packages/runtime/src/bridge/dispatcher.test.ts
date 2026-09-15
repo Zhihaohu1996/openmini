@@ -79,6 +79,29 @@ describe('createBridgeDispatcher', () => {
     expect(received[1]).toMatchObject({ requestId: 'req-2', ok: true, result: 'hi' });
   });
 
+  it('passes the manifest through to the handler context', async () => {
+    const { sandbox } = createFakeSandbox();
+    const channel = new MessageChannel();
+    const received = collectResponses(channel.port2);
+    const manifest = makeManifest(['storage']);
+    let seenManifestId: string | undefined;
+    const handlers: BridgeHandlerRegistry = {
+      storage: {
+        get: (_params, ctx) => {
+          seenManifestId = ctx.manifest.id;
+          return null;
+        },
+      },
+    };
+
+    createBridgeDispatcher({ manifest, sandbox, port: channel.port1, handlers });
+    channel.port2.postMessage(request());
+    await tick(2);
+
+    expect(received[0]).toMatchObject({ ok: true, result: null });
+    expect(seenManifestId).toBe(manifest.id);
+  });
+
   it('denies a call to a namespace absent from the manifest permissions', async () => {
     const { sandbox } = createFakeSandbox();
     const channel = new MessageChannel();

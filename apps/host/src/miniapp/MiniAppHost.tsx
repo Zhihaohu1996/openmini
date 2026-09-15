@@ -1,4 +1,12 @@
-import { createBridgeDispatcher, createMiniAppSandbox, gateManifest } from '@openmini/runtime';
+import {
+  createBridgeDispatcher,
+  createIndexedDbStorageProvider,
+  createMiniAppSandbox,
+  createNavigationHandlers,
+  createStorageHandlers,
+  createUserHandlers,
+  gateManifest,
+} from '@openmini/runtime';
 import type { MiniAppResourceProvider, MiniAppSandbox, SandboxState } from '@openmini/runtime';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -47,7 +55,16 @@ export function MiniAppHost({ manifestJson, resourceProvider }: MiniAppHostProps
       resourceProvider,
       container: containerRef.current,
       onBridgeReady: (port) => {
-        createBridgeDispatcher({ manifest, sandbox, port });
+        createBridgeDispatcher({
+          manifest,
+          sandbox,
+          port,
+          handlers: {
+            storage: createStorageHandlers({ provider: createIndexedDbStorageProvider() }),
+            navigation: createNavigationHandlers(),
+            user: createUserHandlers(),
+          },
+        });
       },
     });
     sandboxRef.current = sandbox;

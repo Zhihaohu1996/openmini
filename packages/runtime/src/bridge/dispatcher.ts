@@ -9,7 +9,7 @@ import {
 } from '@openmini/shared';
 import type { MiniAppSandbox } from '../sandbox/types';
 import { computePermittedNamespaces, getMethodNamespace, isNamespaceKnown } from './capabilities';
-import { BridgeInvalidParamsError } from './errors';
+import { BridgeInvalidParamsError, BridgeStorageQuotaExceededError } from './errors';
 import { createNavigationHandlers } from './handlers/navigation';
 import { createStorageHandlers } from './handlers/storage';
 import { createUserHandlers } from './handlers/user';
@@ -183,7 +183,7 @@ export function createBridgeDispatcher(options: BridgeDispatcherOptions): Bridge
     inFlight += 1;
     const requestId = data.requestId;
     Promise.resolve()
-      .then(() => handler(data.params, { sandbox }))
+      .then(() => handler(data.params, { sandbox, manifest }))
       .then(
         (result) => {
           inFlight -= 1;
@@ -206,6 +206,8 @@ export function createBridgeDispatcher(options: BridgeDispatcherOptions): Bridge
           }
           if (error instanceof BridgeInvalidParamsError) {
             postError(requestId, 'INVALID_PARAMS', error.message);
+          } else if (error instanceof BridgeStorageQuotaExceededError) {
+            postError(requestId, 'STORAGE_QUOTA_EXCEEDED', error.message);
           } else {
             postError(requestId, 'INTERNAL_ERROR', 'internal error');
           }

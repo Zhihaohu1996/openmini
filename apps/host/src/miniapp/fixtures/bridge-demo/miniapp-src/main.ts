@@ -19,6 +19,8 @@ interface BridgeDemoTestHooks {
   closeAndReport(): Promise<'resolved' | 'rejected'>;
   sendForgedSession(): void;
   sendAfterClose(): void;
+  setPersistedValue(key: string, value: string): Promise<void>;
+  getPersistedValue(key: string): Promise<string | null>;
 }
 
 declare global {
@@ -85,6 +87,16 @@ async function main(): Promise<void> {
         method: 'storage.get',
         params: { key: 'greeting' },
       });
+    },
+    // Used by e2e/bridge-storage-persistence.spec.ts to prove storage
+    // survives a real destroy -> reload cycle: the spec sets a value on one
+    // Load, destroys, then reads it back on a second Load without setting it
+    // again in between.
+    setPersistedValue(key, value) {
+      return storage.set(key, value);
+    },
+    getPersistedValue(key) {
+      return storage.get(key);
     },
   };
 }

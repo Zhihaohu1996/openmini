@@ -28,6 +28,7 @@ export const BRIDGE_ERROR_CODES = [
   'SESSION_INVALID',
   'REQUEST_TIMEOUT',
   'RATE_LIMITED',
+  'STORAGE_QUOTA_EXCEEDED',
   'INTERNAL_ERROR',
 ] as const;
 export type BridgeErrorCode = (typeof BRIDGE_ERROR_CODES)[number];

@@ -1,11 +1,13 @@
-# Mini App JS Bridge & Capability API — Phase 4
+# Mini App JS Bridge & Capability API — Phase 4 (+ Phase 5 persistent storage)
 
 Phase 4 layers a small, deny-by-default RPC protocol on top of the Phase 3
 [sandbox boundary and handshake](sandbox.md), giving a Mini App a real (if
 intentionally tiny) way to call the host: `openmini.storage.*`,
 `openmini.navigation.*`, `openmini.user.*`. It introduces no new trust
 boundary — all bridge traffic travels over the exact `MessagePort` the Phase 3
-handshake already established.
+handshake already established. Phase 5 later made `storage.*` a real, durable,
+quota-enforced subsystem (see ["Persistent storage.* (Phase 5)"](#persistent-storage-phase-5))
+without changing this protocol or trust model.
 
 ## Capability model
 
@@ -43,17 +45,19 @@ openmini.navigation.close(): Promise<void>
 openmini.user.getProfile(): Promise<{ id: string | null; displayName: string | null }>
 ```
 
-All three handler modules are deliberate stubs, not real subsystems:
+`navigation.*` and `user.*` remain deliberate stubs, not real subsystems:
 
-- `storage.*` is backed by a plain in-memory `Map` scoped to one sandbox
-  instance — not persistent, not `localStorage`, not disk.
 - `navigation.close()` requests the host to close the Mini App (see the
   ack-confirmed ordering below).
 - `user.getProfile()` returns a static stub (`{ id: null, displayName: null
   }`) — no real identity/auth system exists yet.
 
-No bulk/list operations, no events/subscriptions. Broader storage/navigation/
-user features are out of scope for Phase 4.
+`storage.*` was originally a non-persistent in-memory `Map` in Phase 4; Phase 5
+made it a real, durable, quota-enforced subsystem — see
+["Persistent storage.* (Phase 5)"](#persistent-storage-phase-5) below.
+
+No bulk/list operations, no events/subscriptions. Broader navigation/user
+features remain out of scope.
 
 ## Protocol
 
@@ -100,6 +104,7 @@ type BridgeErrorCode =
   | 'SESSION_INVALID'
   | 'REQUEST_TIMEOUT'   // client-synthesized only; the host never sends this
   | 'RATE_LIMITED'
+  | 'STORAGE_QUOTA_EXCEEDED'   // storage.set only — see "Persistent storage.*" below
   | 'INTERNAL_ERROR';
 ```
 
@@ -142,6 +147,70 @@ This is not a general "every RPC gets acknowledged" mechanism — only
 `navigation.close` has dispatcher-side `closing` state, and the shared
 `close-ack` envelope type exists solely to support this one flow.
 `createSandbox.ts`'s `destroy()` itself is unmodified.
+
+## Persistent storage.* (Phase 5)
+
+`storage.*` is built against a pluggable `MiniAppStorageProvider` interface
+([`packages/runtime/src/bridge/handlers/storageProvider.ts`](../../packages/runtime/src/bridge/handlers/storageProvider.ts)):
+
+```ts
+interface MiniAppStorageProvider {
+  get(appId: string, key: string): Promise<string | null>;
+  set(appId: string, key: string, value: string): Promise<void>;
+  getUsedBytes(appId: string): Promise<number>;
+}
+```
+
+Two implementations exist: the original non-persistent in-memory `Map`
+(`createInMemoryStorageProvider()`, still the default when no provider is
+supplied — existing callers of `createStorageHandlers()` are unaffected), and
+a real, durable
+[`createIndexedDbStorageProvider()`](../../packages/runtime/src/bridge/handlers/indexedDbStorageProvider.ts),
+which `apps/host`'s `MiniAppHost` wires in as the default for the real app.
+IndexedDB runs in the **host's own trusted origin** — the sandboxed Mini App
+iframe never touches it directly (no `allow-same-origin`, unchanged); it only
+ever reaches storage through the existing dispatcher RPC path, so this does
+not touch or relax the sandbox/CSP boundary at all.
+
+**Scoping:** every read/write is keyed by `manifest.id` alone (not
+`id`+`version`), so storage survives a Mini App version upgrade the way
+ordinary app storage does. This relies on the same id-ownership trust
+assumption `docs/manifest.md` already flags as an open registry concern — not
+a new risk this introduces.
+
+### Quota semantics (normative)
+
+Enforced in `storage.ts`, backend-agnostic (identical behavior regardless of
+which provider is plugged in):
+
+| Limit | Default | Override |
+|---|---|---|
+| Per-key | 512 bytes | `createStorageHandlers({ maxKeyBytes })` |
+| Per-value | 8,192 bytes (8 KiB) | `createStorageHandlers({ maxValueBytes })` |
+| Per-Mini-App total | 524,288 bytes (512 KiB) | `createStorageHandlers({ maxTotalBytesPerApp })` |
+
+- All three limits measure **UTF-8 encoded byte length** (`TextEncoder`),
+  never JS string `.length` — a JS string's UTF-16 code-unit count
+  under-counts multi-byte characters (emoji, most non-Latin scripts) relative
+  to what's actually persisted.
+- The per-Mini-App total counts **both key bytes and value bytes** for every
+  stored entry — an earlier design counted values only, which left a DoS gap
+  where a Mini App could exhaust host storage via unboundedly large keys
+  while staying under the value-only quota.
+- **Accounting rule:** a brand-new key adds `keyBytes + valueBytes` to the
+  app's total. Overwriting an existing key adds only the *value* delta
+  (`-oldValueBytes + newValueBytes`) — that key's bytes were already counted
+  at its first write, so they are never re-added on subsequent overwrites.
+- Any of the three violations rejects the `storage.set` call with
+  `STORAGE_QUOTA_EXCEEDED`, leaving previously stored data completely
+  unchanged — no partial writes.
+- **Known limitation — best-effort, not transactional.** The existing-key
+  lookup and the subsequent write are not atomic with respect to concurrent
+  `storage.set` calls for the same `manifest.id`; two concurrent calls can
+  each pass their own size check and jointly push the real total slightly
+  over the cap. No locking, versioning, or transactional redesign was added
+  to close this gap — documented here the same way Phase 3/4 documented their
+  own limits, rather than silently glossed over.
 
 ## Mini App SDK (`@openmini/sdk`)
 
@@ -189,9 +258,12 @@ path, not a dedicated teardown signal.
   port handed off at handshake.
 - No Mini-App-driven RPC registration — the method registry is fixed by the
   host at bridge-creation time.
-- No persistent storage, no real navigation/routing system, no real
-  user/auth system — the three stub handlers are exactly enough to prove the
-  architecture end-to-end and no more.
+- No real navigation/routing system, no real user/auth system — those two
+  stub handlers remain exactly enough to prove the architecture end-to-end
+  and no more. (`storage.*` is no longer a stub as of Phase 5 — see
+  ["Persistent storage.* (Phase 5)"](#persistent-storage-phase-5).)
+- No transactional/locking storage guarantees — quota enforcement is
+  best-effort under concurrent writes (see the quota semantics above).
 
 ## Testing split
 
@@ -200,7 +272,12 @@ path, not a dedicated teardown signal.
 - **Pure Vitest — `packages/runtime/src/bridge`**: dispatcher tests against a
   fake `MessagePort` — permission/method checks, malformed/stale-session
   handling, rate limiting, and the full `navigation.close` closing/fallback
-  sequence.
+  sequence; storage provider tests (in-memory and, via `fake-indexeddb`,
+  IndexedDB) covering isolation and used-bytes accounting; storage handler
+  tests covering the full quota model (per-key, per-value, per-app-total,
+  UTF-8 byte measurement, overwrite accounting); and a dispatcher-level
+  integration test simulating a destroy/recreate cycle against a shared
+  IndexedDB-backed provider.
 - **Pure Vitest — `packages/sdk/src/bridge`**: client tests against a fake
   port — request/response correlation, concurrent in-flight requests,
   timeout and stale-response handling.
@@ -210,8 +287,9 @@ path, not a dedicated teardown signal.
   trip and fallback-timer teardown.
 - **Playwright/Chromium — `e2e/`**: `bridge-roundtrip`,
   `bridge-permission-denied`, `bridge-forged-message`,
-  `bridge-destroy-mid-request`, and `bridge-navigation-close`, run against a
-  real bridge-demo fixture that bundles the actual `@openmini/sdk` via
-  esbuild (see
+  `bridge-destroy-mid-request`, `bridge-navigation-close`, and
+  `bridge-storage-persistence` (real destroy → reload cycle, proving
+  IndexedDB-backed persistence end-to-end), run against a real bridge-demo
+  fixture that bundles the actual `@openmini/sdk` via esbuild (see
   [`apps/host/scripts/build-bridge-demo-fixture.mjs`](../../apps/host/scripts/build-bridge-demo-fixture.mjs))
   rather than hand-rolled duplicate client logic.

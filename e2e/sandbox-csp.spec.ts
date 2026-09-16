@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('the Mini App document enforces its CSP: no unsafe script sources, network blocked', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Load' }).click();
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
 
   const frame = page.frameLocator('[data-testid="miniapp-container"] iframe');
 

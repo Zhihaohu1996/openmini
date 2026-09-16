@@ -106,10 +106,43 @@ interface MiniAppResourceProvider {
 ```
 
 `resolveEntryDocument` validates/canonicalizes the manifest's `entry` path, then reads it through
-the caller-supplied provider; the resulting HTML becomes the iframe's `srcdoc`. Phase 3 ships one
-implementation, `StaticFixtureResourceProvider` (an in-memory path → text map), for fixtures and
-the host demo. A filesystem- or HTTP-backed provider is future work and implements the same
-interface without any change to sandbox/lifecycle code.
+the caller-supplied provider; the resulting HTML becomes the iframe's `srcdoc`. Phase 3 shipped
+`StaticFixtureResourceProvider` (an in-memory path → text map), for fixtures and the host demo.
+Phase 6 adds a second implementation, `FetchResourceProvider`
+(`createFetchResourceProvider(baseUrl)`, [`fetchResourceProvider.ts`](../../packages/runtime/src/sandbox/fetchResourceProvider.ts)),
+which reads a Mini App package's files over HTTP from a fixed base URL — with **zero changes** to
+`resolveEntryDocument`, `gateManifest`, `MiniAppHost`, or the sandbox/bridge pipeline, exactly as
+this section previously said a filesystem- or HTTP-backed provider would require.
+
+`loadMiniAppFromUrl(baseUrl)` (`loadMiniAppFromUrl.ts`) pairs a `FetchResourceProvider` with the
+package's own fetched `openmini.json`, returning exactly the `{ manifestJson, resourceProvider }`
+shape `MiniAppHost` already takes from any fixture. It deliberately does not parse or validate the
+manifest itself — that still happens once, through the same `gateManifest` call every fixture goes
+through today. `ok: false` from `loadMiniAppFromUrl` means only that the manifest could not even be
+fetched (bad base URL, network failure, non-2xx response); manifest *content* errors surface
+through `gateManifest` as before.
+
+**Base URL contract.** Both `createFetchResourceProvider` and `loadMiniAppFromUrl` normalize the
+caller-supplied base URL through a single shared helper, `normalizePackageBaseUrl`, before
+resolving anything against it:
+
+- Only `http:`/`https:` schemes are accepted; anything else (`file:`, `data:`, `javascript:`, or a
+  URL that fails to parse at all) is rejected with a short, non-leaking error before any `fetch`
+  is attempted — this is Phase 6's only new validation surface.
+- `search` and `hash` are stripped unconditionally, so a query string or fragment on the supplied
+  base URL can never influence where package files resolve.
+- The path is forced to end with `/`, so a base URL with or without a trailing slash
+  (`.../hello-remote` vs. `.../hello-remote/`) always resolves package-relative paths *inside*
+  that package directory, never its parent — this matters because WHATWG `URL` resolution treats a
+  base path without a trailing slash as a file, not a directory.
+
+The host's "load by URL" control (`apps/host/src/App.tsx`) is a host-operator-facing tool, not a
+Mini-App-facing capability — equivalent in trust terms to a user typing a URL into their own
+browser's address bar. `fetch()` runs in the host's own trusted JS context, before any sandbox
+exists; it does not grant a Mini App any new capability, only changes where the host gets the
+bytes it was always going to hand to `srcdoc`. CSP correctness remains the package's own
+responsibility, exactly as with `StaticFixtureResourceProvider` — the runtime never computes or
+injects CSP into fetched content.
 
 ## Containment (path security)
 

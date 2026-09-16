@@ -13,7 +13,7 @@ test('self-navigation of the sandboxed frame is detected after the fact, not pre
   await page.goto('/?scenario=self-navigate');
   const status = page.getByTestId('miniapp-status');
 
-  await page.getByRole('button', { name: 'Load' }).click();
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
   await expect(status).toHaveText('status: running', { timeout: 10_000 });
 
   // The fixture navigates itself to about:blank ~200ms after the handshake.

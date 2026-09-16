@@ -4,7 +4,7 @@ test('the Mini App cannot read/mutate the host DOM or navigate the top frame', a
   await page.goto('/');
   const hostTitleBefore = await page.title();
 
-  await page.getByRole('button', { name: 'Load' }).click();
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
 
   const frame = page.frameLocator('[data-testid="miniapp-container"] iframe');
   await expect(frame.locator('#hello')).toHaveText('Hello from OpenMini Sandbox');

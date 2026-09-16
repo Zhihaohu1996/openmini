@@ -5,7 +5,7 @@ test('destroying the sandbox mid-request causes no crash or unhandled rejection'
   page.on('pageerror', (error) => pageErrors.push(error));
 
   await page.goto('/?scenario=bridge-demo');
-  await page.getByRole('button', { name: 'Load' }).click();
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
 
   const frame = page.frameLocator('[data-testid="miniapp-container"] iframe');
   await expect(frame.locator('#storage-result')).toHaveText('hello from bridge', { timeout: 10_000 });

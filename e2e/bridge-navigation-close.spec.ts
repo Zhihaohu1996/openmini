@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('navigation.close() resolves before the sandbox is torn down (ack-confirmed, real browser)', async ({ page }) => {
   await page.goto('/?scenario=bridge-demo');
-  await page.getByRole('button', { name: 'Load' }).click();
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
 
   const frame = page.frameLocator('[data-testid="miniapp-container"] iframe');
   await expect(frame.locator('#storage-result')).toHaveText('hello from bridge', { timeout: 10_000 });

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('openmini.storage.* persists across a real destroy -> reload cycle', async ({ page }) => {
   await page.goto('/?scenario=bridge-demo');
-  await page.getByRole('button', { name: 'Load' }).click();
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
 
   const frame = page.frameLocator('[data-testid="miniapp-container"] iframe');
   await expect(frame.locator('#storage-result')).toHaveText('hello from bridge', { timeout: 10_000 });
@@ -22,7 +22,7 @@ test('openmini.storage.* persists across a real destroy -> reload cycle', async 
   // the value back without ever setting it again — proving it survived the
   // real destroy/recreate cycle via the persistent IndexedDB-backed provider,
   // not just the in-session round trip bridge-roundtrip.spec.ts covers.
-  await page.getByRole('button', { name: 'Load' }).click();
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
   const frameAfterReload = page.frameLocator('[data-testid="miniapp-container"] iframe');
   await expect(frameAfterReload.locator('#storage-result')).toHaveText('hello from bridge', { timeout: 10_000 });
 

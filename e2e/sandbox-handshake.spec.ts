@@ -8,7 +8,7 @@ test('the sandbox reaches running via the real MessageChannel handshake, and des
 
   await expect(status).toHaveText('status: idle');
 
-  await page.getByRole('button', { name: 'Load' }).click();
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
   await expect(status).toHaveText('status: running', { timeout: 10_000 });
 
   await page.getByRole('button', { name: 'Destroy' }).click();
@@ -17,6 +17,6 @@ test('the sandbox reaches running via the real MessageChannel handshake, and des
 
   // A fresh sandbox instance (new session, new MessageChannel) reaches
   // running again after destroy — the port/session are not reused.
-  await page.getByRole('button', { name: 'Load' }).click();
+  await page.getByRole('button', { name: 'Load', exact: true }).click();
   await expect(status).toHaveText('status: running', { timeout: 10_000 });
 });

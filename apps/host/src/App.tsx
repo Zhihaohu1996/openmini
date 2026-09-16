@@ -1,6 +1,8 @@
-import { StaticFixtureResourceProvider, getRuntimeInfo } from '@openmini/runtime';
+import { StaticFixtureResourceProvider, getRuntimeInfo, loadMiniAppFromUrl } from '@openmini/runtime';
+import type { MiniAppResourceProvider } from '@openmini/runtime';
 import { getSdkInfo } from '@openmini/sdk';
 import { Placeholder } from '@openmini/ui';
+import type { FormEvent } from 'react';
 import { useEffect, useState } from 'react';
 import bridgeDemoHtml from './miniapp/fixtures/bridge-demo/generated/index.html?raw';
 import { BRIDGE_DEMO_MANIFEST_JSON, BRIDGE_DEMO_NO_STORAGE_MANIFEST_JSON } from './miniapp/fixtures/bridge-demo/manifest';
@@ -75,6 +77,58 @@ function useScenarioDemo(scenario: Scenario): { manifestJson: string; provider: 
   }
 }
 
+type RemoteLoadState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'error'; reason: string }
+  | { status: 'loaded'; manifestJson: string; provider: MiniAppResourceProvider };
+
+/**
+ * A host-operator-facing "load by URL" control, alongside the `?scenario=`
+ * fixture picker: fetches a real, externally-hosted Mini App package (its
+ * manifest discovered by `loadMiniAppFromUrl` itself) and hands the result
+ * straight to `MiniAppHost`, unmodified. See docs/security/sandbox.md.
+ */
+function RemoteMiniAppLoader() {
+  const [url, setUrl] = useState('');
+  const [state, setState] = useState<RemoteLoadState>({ status: 'idle' });
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    setState({ status: 'loading' });
+    const result = await loadMiniAppFromUrl(url);
+    if (result.ok) {
+      setState({ status: 'loaded', manifestJson: result.manifestJson, provider: result.provider });
+    } else {
+      setState({ status: 'error', reason: result.reason });
+    }
+  }
+
+  return (
+    <section>
+      <h2>Load a Mini App by URL</h2>
+      <form onSubmit={(event) => void handleSubmit(event)}>
+        <input
+          type="text"
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+          placeholder="http://localhost:5173/miniapps/hello-remote"
+          aria-label="Mini App package URL"
+        />
+        <button type="submit" disabled={state.status === 'loading'}>
+          Load by URL
+        </button>
+      </form>
+      {state.status === 'error' && <p data-testid="remote-load-error">{state.reason}</p>}
+      {state.status === 'loaded' && (
+        <div data-testid="remote-miniapp-host">
+          <MiniAppHost manifestJson={state.manifestJson} resourceProvider={state.provider} />
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function App() {
   const runtime = getRuntimeInfo();
   const sdk = getSdkInfo();
@@ -98,6 +152,8 @@ export function App() {
       ) : (
         <p>preparing fixture...</p>
       )}
+
+      <RemoteMiniAppLoader />
     </main>
   );
 }

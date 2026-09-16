@@ -1,4 +1,4 @@
-# Mini App JS Bridge & Capability API — Phase 4 (+ Phase 5 persistent storage)
+# Mini App JS Bridge & Capability API — Phase 4 (+ Phase 5 persistent storage, Phase 7 network)
 
 Phase 4 layers a small, deny-by-default RPC protocol on top of the Phase 3
 [sandbox boundary and handshake](sandbox.md), giving a Mini App a real (if
@@ -7,12 +7,14 @@ intentionally tiny) way to call the host: `openmini.storage.*`,
 boundary — all bridge traffic travels over the exact `MessagePort` the Phase 3
 handshake already established. Phase 5 later made `storage.*` a real, durable,
 quota-enforced subsystem (see ["Persistent storage.* (Phase 5)"](#persistent-storage-phase-5))
-without changing this protocol or trust model.
+without changing this protocol or trust model. Phase 7 added `network.*` the
+same way — a new namespace behind the same two gates, with the sandbox's own
+CSP left untouched (see ["Host-mediated network.fetch (Phase 7)"](#host-mediated-networkfetch-phase-7)).
 
 ## Capability model
 
 The manifest's `permissions: ManifestPermission[]` field (`'storage' |
-'navigation' | 'user'`, from
+'navigation' | 'user' | 'network'`, from
 [`@openmini/manifest`](../../packages/manifest/src/constants.ts)) maps 1:1 to
 a bridge namespace:
 
@@ -21,6 +23,7 @@ a bridge namespace:
 | `storage` | `storage.*` | `storage.get(key)`, `storage.set(key, value)` |
 | `navigation` | `navigation.*` | `navigation.close()` |
 | `user` | `user.*` | `user.getProfile()` |
+| `network` | `network.*` | `network.fetch(url, init)` |
 
 The permitted-namespace set is computed once, at bridge-creation time, from
 the manifest already gated by `gateManifest` — no new manifest re-parsing, no
@@ -43,6 +46,7 @@ openmini.storage.get(key: string): Promise<string | null>
 openmini.storage.set(key: string, value: string): Promise<void>
 openmini.navigation.close(): Promise<void>
 openmini.user.getProfile(): Promise<{ id: string | null; displayName: string | null }>
+openmini.network.fetch(url: string, init?: OpenMiniFetchInit): Promise<NetworkFetchResponse>
 ```
 
 `navigation.*` and `user.*` remain deliberate stubs, not real subsystems:
@@ -243,11 +247,138 @@ removes the iframe, ending the Mini App's JS realm outright — but it means
 client-side cleanup-on-destruction is only exercised via the request timeout
 path, not a dedicated teardown signal.
 
+## Host-mediated `network.fetch` (Phase 7)
+
+`network.fetch` lets a Mini App reach its own backend — and nothing else.
+The request is performed **by the host**, in the host's trusted JS context,
+never inside the iframe. The sandbox's CSP still says `connect-src 'none'`,
+unchanged from Phase 3, so a Mini App's own `fetch`/XHR remains blocked even
+when the `network` permission is granted; this bridge method is the only way
+out, which is what keeps every call host-visible.
+
+### Declaring an allowlist
+
+```json
+{
+  "permissions": ["network"],
+  "network": { "domains": ["api.example.com"] }
+}
+```
+
+The permission and the declaration must agree in both directions: the
+permission without `network.domains` is rejected (a permission with no
+meaning), and `network.domains` without the permission is rejected (a list
+the runtime would never consult).
+
+Matching is **exact**: `new URL(...).hostname` must equal a declared entry.
+No wildcards, no subdomain matching — `api.example.com` does not grant
+`evil-api.example.com` or `sub.api.example.com`. Entries must be written in
+the canonical form the URL parser produces: lowercase, and bracketed for
+IPv6 (`[::1]`, never bare `::1`), since any other spelling could never match.
+
+### What the host fixes, and what the Mini App may set
+
+The `init` a Mini App passes is **not** the browser's `RequestInit`. It has
+only `method`, `headers` and `body`; the host builds the real request itself,
+so there is no field through which a transport/security control could be
+overridden — not a filter that could miss one, but an absent channel.
+
+Always fixed by the host:
+
+| Option | Value | Why |
+|---|---|---|
+| `credentials` | `'omit'` | The host's cookies, HTTP auth and client certs must never ride along |
+| `redirect` | `'error'` | Fail closed — see below |
+| `referrerPolicy` | `'no-referrer'` | The target must not learn the host/Mini App URL |
+
+Settable by the Mini App:
+
+- **`method`** — exactly `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`.
+  `OPTIONS` is deliberately excluded: CORS preflight is browser-managed, and
+  a hand-issued `OPTIONS` would only invite confusion with it.
+- **`headers`** — ordinary application headers. Names are lowercased before
+  the policy check, so casing cannot smuggle one past it. Rejected:
+  `cookie`, `host`, `origin`, `referer`, `content-length`, `connection`,
+  `transfer-encoding`, `upgrade`, and anything prefixed `proxy-` or `sec-`.
+  `Authorization` **is** allowed — an app-supplied token is application data,
+  unrelated to the host's ambient credentials, which `credentials: 'omit'`
+  excludes regardless.
+- **`body`** — a bounded, fully buffered **string**; never a stream. Binary
+  request bodies (`ArrayBuffer`, `Blob`, `FormData`, typed arrays) are **not
+  supported in Phase 7** and are deferred future work: carrying them would
+  need transferables over the `MessagePort`, which the request/response
+  envelope does not model. `GET`/`HEAD` must not carry a body at all: per the
+  Fetch Standard a `GET`/`HEAD` body that merely *exists* throws (even `''`),
+  so the host rejects a non-empty body up front with `INVALID_PARAMS` and
+  omits the field entirely otherwise.
+
+### Redirects: fail closed, and reported honestly
+
+Redirects are **never followed**. A redirect from an allowlisted host could
+point anywhere, which would carry the request past the allowlist, so the host
+sends `redirect: 'error'`.
+
+A manual-redirect design (inspect `Location`, revalidate, re-issue) was
+considered and rejected: browser `fetch` with `redirect: 'manual'` yields an
+opaque-redirect response — status `0`, no readable `Location` — so
+"revalidate every hop" would be built on a response the runtime cannot read.
+
+The error, though, is deliberately coarse. A network error reaches JS as a
+bare `TypeError`; the Fetch Standard attaches no cause to it, on purpose,
+because doing so would leak cross-origin information. **So a blocked
+redirect, a CORS rejection, a DNS failure, a TLS failure and a dropped
+connection are genuinely indistinguishable to the host, and all report
+`NETWORK_REQUEST_FAILED`.** The code does not identify a cause, and no code
+should be read as claiming one.
+
+### Error model
+
+A distinct code exists only where the host can actually tell cases apart:
+
+| Code | Cause |
+|---|---|
+| `PERMISSION_DENIED` | Host not in `network.domains` (or the namespace not permitted at all) |
+| `INVALID_PARAMS` | Rejected before any network access: bad scheme, non-default https port, embedded URL credentials, disallowed method, blocked header, body on `GET`/`HEAD` |
+| `NETWORK_REQUEST_FAILED` | The browser rejected the request — cause not knowable (see above) |
+| `NETWORK_TIMEOUT` | The host's own 30s deadline elapsed |
+| `NETWORK_REQUEST_TOO_LARGE` | Request body over 1 MiB (1,048,576 bytes) |
+| `NETWORK_RESPONSE_TOO_LARGE` | Response body over 5 MiB (5,242,880 bytes) |
+
+The last three are precise precisely because the *host* caused them. The host
+owns the `AbortController` (a Mini App cannot supply, extend or cancel one)
+and tracks *why* it aborted, so a size-cap abort is never mistaken for a
+timeout. Both size caps count bytes actually transferred — a missing or
+dishonest `Content-Length` cannot raise the ceiling.
+
+### The allowlist is not a CORS bypass
+
+`network.domains` governs only whether the host will **attempt** the request.
+The host's `fetch` is an ordinary browser `fetch` subject to the same-origin
+policy, so a cross-origin target must still return `Access-Control-Allow-Origin`
+covering the host's origin. Declaring a domain is necessary, not sufficient.
+
+### Transport scope
+
+HTTP(S) request/response only: one request in, one complete buffered response
+out. No XHR-shaped API, no WebSocket, no SSE, no streaming bodies, no
+persistent connections — each needs a lifecycle model the request/response
+bridge does not have, and all remain deferred.
+
+`https:` is required. Plain `http:` is accepted only for `localhost`,
+`127.0.0.1` and `[::1]`, and only when the host embedder explicitly enables
+the development/test flag on `createNetworkHandlers` (default **off**, and
+off in any production build) — the gate is configuration, not hostname shape,
+so the "dev only" claim is actually enforced. For `https:` only the default
+port is allowed, since the manifest has no way to declare another.
+
 ## Security boundaries — explicitly NOT provided by Phase 4
 
 - No direct subresource/network access via `fetch`, `XHR`, `WebSocket`,
   `EventSource`, or `sendBeacon` — still blocked by CSP `connect-src 'none'`,
-  which Phase 4 leaves untouched. The Phase 3
+  which neither Phase 4 nor Phase 7 touches. Phase 7's `network.fetch` does
+  not relax this: it routes through the host instead (see
+  ["Host-mediated network.fetch (Phase 7)"](#host-mediated-networkfetch-phase-7)).
+  The Phase 3
   [self-navigation limitation](sandbox.md#known-limitation-self-navigation-is-not-fully-prevented)
   is unrelated to `connect-src` and is unchanged by this phase.
 - No arbitrary host DOM access — the bridge is a fixed, closed method
@@ -261,7 +392,10 @@ path, not a dedicated teardown signal.
 - No real navigation/routing system, no real user/auth system — those two
   stub handlers remain exactly enough to prove the architecture end-to-end
   and no more. (`storage.*` is no longer a stub as of Phase 5 — see
-  ["Persistent storage.* (Phase 5)"](#persistent-storage-phase-5).)
+  ["Persistent storage.* (Phase 5)"](#persistent-storage-phase-5); `network.*`
+  is real as of Phase 7.)
+- No redirect-following, and no way to tell a blocked redirect from any other
+  transport failure — both deliberate, see the Phase 7 section above.
 - No transactional/locking storage guarantees — quota enforcement is
   best-effort under concurrent writes (see the quota semantics above).
 

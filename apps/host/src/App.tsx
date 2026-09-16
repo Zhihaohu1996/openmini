@@ -5,7 +5,11 @@ import { Placeholder } from '@openmini/ui';
 import type { FormEvent } from 'react';
 import { useEffect, useState } from 'react';
 import bridgeDemoHtml from './miniapp/fixtures/bridge-demo/generated/index.html?raw';
-import { BRIDGE_DEMO_MANIFEST_JSON, BRIDGE_DEMO_NO_STORAGE_MANIFEST_JSON } from './miniapp/fixtures/bridge-demo/manifest';
+import {
+  BRIDGE_DEMO_MANIFEST_JSON,
+  BRIDGE_DEMO_NETWORK_MANIFEST_JSON,
+  BRIDGE_DEMO_NO_STORAGE_MANIFEST_JSON,
+} from './miniapp/fixtures/bridge-demo/manifest';
 import { buildHelloSandboxHtml } from './miniapp/fixtures/hello-sandbox/buildFixture';
 import { HELLO_SANDBOX_MANIFEST_JSON } from './miniapp/fixtures/hello-sandbox/manifest';
 import { buildSelfNavigateHtml } from './miniapp/fixtures/self-navigate/buildFixture';
@@ -21,7 +25,13 @@ const INVALID_MANIFEST_JSON = '{ this is not valid json';
  * the real running app instead of standing up a second host page for each
  * case.
  */
-type Scenario = 'hello-sandbox' | 'invalid-manifest' | 'self-navigate' | 'bridge-demo' | 'bridge-demo-no-storage';
+type Scenario =
+  | 'hello-sandbox'
+  | 'invalid-manifest'
+  | 'self-navigate'
+  | 'bridge-demo'
+  | 'bridge-demo-no-storage'
+  | 'bridge-demo-network';
 
 const SCENARIOS: readonly Scenario[] = [
   'hello-sandbox',
@@ -29,6 +39,7 @@ const SCENARIOS: readonly Scenario[] = [
   'self-navigate',
   'bridge-demo',
   'bridge-demo-no-storage',
+  'bridge-demo-network',
 ];
 
 function readScenario(): Scenario {
@@ -40,7 +51,12 @@ function useScenarioDemo(scenario: Scenario): { manifestJson: string; provider: 
   const [provider, setProvider] = useState<StaticFixtureResourceProvider | null>(null);
 
   useEffect(() => {
-    if (scenario === 'invalid-manifest' || scenario === 'bridge-demo' || scenario === 'bridge-demo-no-storage') {
+    if (
+      scenario === 'invalid-manifest' ||
+      scenario === 'bridge-demo' ||
+      scenario === 'bridge-demo-no-storage' ||
+      scenario === 'bridge-demo-network'
+    ) {
       return;
     }
     let cancelled = false;
@@ -70,6 +86,11 @@ function useScenarioDemo(scenario: Scenario): { manifestJson: string; provider: 
     case 'bridge-demo-no-storage':
       return {
         manifestJson: BRIDGE_DEMO_NO_STORAGE_MANIFEST_JSON,
+        provider: new StaticFixtureResourceProvider({ 'index.html': bridgeDemoHtml }),
+      };
+    case 'bridge-demo-network':
+      return {
+        manifestJson: BRIDGE_DEMO_NETWORK_MANIFEST_JSON,
         provider: new StaticFixtureResourceProvider({ 'index.html': bridgeDemoHtml }),
       };
     default:

@@ -44,9 +44,30 @@
       "type": "array",
       "uniqueItems": true,
       "items": {
-        "enum": ["storage", "navigation", "user"]
+        "enum": ["storage", "navigation", "user", "network"]
       },
       "description": "Requested capability permissions. May be empty."
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domains"],
+      "properties": {
+        "domains": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "anyOf": [
+              { "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$" },
+              { "pattern": "^\\[[0-9a-f:]+\\]$" }
+            ]
+          },
+          "description": "Exact lowercase hostnames reachable via openmini.network.fetch. No wildcards; IPv6 must be bracketed, e.g. \"[::1]\"."
+        }
+      },
+      "$comment": "Required when permissions includes \"network\" and forbidden otherwise. That cross-field dependency is enforced by validateManifest(), not expressed here.",
+      "description": "Network allowlist. Only meaningful alongside the \"network\" permission."
     }
   }
 }

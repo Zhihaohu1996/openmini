@@ -1,6 +1,7 @@
 import { OPENMINI_SHARED_VERSION } from '@openmini/shared';
 import { createStorageApi, type OpenMiniStorageApi } from './api/storage';
 import { createNavigationApi, type OpenMiniNavigationApi } from './api/navigation';
+import { createNetworkApi, type OpenMiniNetworkApi } from './api/network';
 import { createUserApi, type OpenMiniUserApi } from './api/user';
 import { createBridgeClient } from './bridge/client';
 import { initOpenMiniBridge, type BridgeConnectTarget } from './bridge/connect';
@@ -18,6 +19,7 @@ export interface OpenMiniBridge {
   readonly storage: OpenMiniStorageApi;
   readonly navigation: OpenMiniNavigationApi;
   readonly user: OpenMiniUserApi;
+  readonly network: OpenMiniNetworkApi;
 }
 
 export interface ConnectOpenMiniOptions {
@@ -37,6 +39,7 @@ export async function connectOpenMini(options: ConnectOpenMiniOptions = {}): Pro
     storage: createStorageApi(client),
     navigation: createNavigationApi(client),
     user: createUserApi(client),
+    network: createNetworkApi(client),
   };
 }
 
@@ -51,3 +54,5 @@ export { createNavigationApi } from './api/navigation';
 export type { OpenMiniNavigationApi } from './api/navigation';
 export { createUserApi } from './api/user';
 export type { OpenMiniUserApi, OpenMiniUserProfile } from './api/user';
+export { createNetworkApi } from './api/network';
+export type { OpenMiniFetchInit, OpenMiniNetworkApi } from './api/network';

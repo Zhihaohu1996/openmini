@@ -33,6 +33,65 @@ describe('validateManifest — valid manifests', () => {
   });
 });
 
+describe('validateManifest — network declaration', () => {
+  const WITH_NETWORK = {
+    ...VALID_MANIFEST,
+    permissions: ['network'],
+    network: { domains: ['api.example.com'] },
+  };
+
+  it('accepts the network permission paired with a domains list', () => {
+    const result = validateManifest(WITH_NETWORK);
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.manifest.network).toEqual({ domains: ['api.example.com'] });
+    }
+  });
+
+  it('leaves network undefined when the permission is not requested', () => {
+    const result = validateManifest(VALID_MANIFEST);
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.manifest.network).toBeUndefined();
+    }
+  });
+
+  it('rejects the network permission without a declaration', () => {
+    const result = validateManifest({ ...VALID_MANIFEST, permissions: ['network'] });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({ path: 'network', code: 'MISSING_NETWORK_DECLARATION' }),
+      );
+    }
+  });
+
+  it('rejects a declaration without the network permission', () => {
+    const result = validateManifest({ ...VALID_MANIFEST, network: { domains: ['api.example.com'] } });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({ path: 'network', code: 'UNEXPECTED_NETWORK_DECLARATION' }),
+      );
+    }
+  });
+
+  it('rejects an invalid domain entry', () => {
+    const result = validateManifest({ ...WITH_NETWORK, network: { domains: ['*.example.com'] } });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({ path: 'network.domains[0]', code: 'INVALID_NETWORK_DOMAIN' }),
+      );
+    }
+  });
+
+  it('does not report network as an unknown top-level field', () => {
+    const result = validateManifest(WITH_NETWORK);
+    expect(result.valid).toBe(true);
+  });
+});
+
 describe('validateManifest — invalid root', () => {
   it.each([null, 42, 'string', ['array']])('rejects a non-object root %j', (value) => {
     const result = validateManifest(value);

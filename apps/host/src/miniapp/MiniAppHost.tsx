@@ -3,6 +3,7 @@ import {
   createIndexedDbStorageProvider,
   createMiniAppSandbox,
   createNavigationHandlers,
+  createNetworkHandlers,
   createStorageHandlers,
   createUserHandlers,
   gateManifest,
@@ -63,6 +64,10 @@ export function MiniAppHost({ manifestJson, resourceProvider }: MiniAppHostProps
             storage: createStorageHandlers({ provider: createIndexedDbStorageProvider() }),
             navigation: createNavigationHandlers(),
             user: createUserHandlers(),
+            // Plain http to loopback is a dev/test affordance only, so it is
+            // tied to the dev build rather than to hostname shape; a
+            // production bundle gets https-only.
+            network: createNetworkHandlers({ allowInsecureLoopback: import.meta.env.DEV }),
           },
         });
       },

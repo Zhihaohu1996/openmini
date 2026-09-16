@@ -73,6 +73,33 @@ const fixtures: Array<{ name: string; manifest: unknown; expectValid: boolean }>
     expectValid: false,
   },
   { name: 'missing entry field', manifest: without(VALID_MANIFEST, 'entry'), expectValid: false },
+  {
+    name: 'network permission with a domains list',
+    manifest: {
+      ...VALID_MANIFEST,
+      permissions: ['network'],
+      network: { domains: ['api.example.com', 'localhost', '[::1]'] },
+    },
+    expectValid: true,
+  },
+  {
+    name: 'invalid network domain',
+    manifest: {
+      ...VALID_MANIFEST,
+      permissions: ['network'],
+      network: { domains: ['https://api.example.com'] },
+    },
+    expectValid: false,
+  },
+  {
+    name: 'unknown field inside network',
+    manifest: {
+      ...VALID_MANIFEST,
+      permissions: ['network'],
+      network: { domains: ['api.example.com'], allowAll: true },
+    },
+    expectValid: false,
+  },
 ];
 
 describe('openmini.schema.json conformance', () => {

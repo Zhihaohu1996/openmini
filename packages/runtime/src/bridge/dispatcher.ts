@@ -9,8 +9,14 @@ import {
 } from '@openmini/shared';
 import type { MiniAppSandbox } from '../sandbox/types';
 import { computePermittedNamespaces, getMethodNamespace, isNamespaceKnown } from './capabilities';
-import { BridgeInvalidParamsError, BridgeStorageQuotaExceededError } from './errors';
+import {
+  BridgeInvalidParamsError,
+  BridgeNetworkError,
+  BridgePermissionDeniedError,
+  BridgeStorageQuotaExceededError,
+} from './errors';
 import { createNavigationHandlers } from './handlers/navigation';
+import { createNetworkHandlers } from './handlers/network';
 import { createStorageHandlers } from './handlers/storage';
 import { createUserHandlers } from './handlers/user';
 import type { BridgeHandlerRegistry } from './types';
@@ -41,6 +47,7 @@ function createDefaultHandlers(): BridgeHandlerRegistry {
     storage: createStorageHandlers(),
     navigation: createNavigationHandlers(),
     user: createUserHandlers(),
+    network: createNetworkHandlers(),
   };
 }
 
@@ -208,6 +215,10 @@ export function createBridgeDispatcher(options: BridgeDispatcherOptions): Bridge
             postError(requestId, 'INVALID_PARAMS', error.message);
           } else if (error instanceof BridgeStorageQuotaExceededError) {
             postError(requestId, 'STORAGE_QUOTA_EXCEEDED', error.message);
+          } else if (error instanceof BridgePermissionDeniedError) {
+            postError(requestId, 'PERMISSION_DENIED', error.message);
+          } else if (error instanceof BridgeNetworkError) {
+            postError(requestId, error.code, error.message);
           } else {
             postError(requestId, 'INTERNAL_ERROR', 'internal error');
           }

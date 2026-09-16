@@ -18,7 +18,7 @@ export const OPENMINI_BRIDGE_VERSION = 1 as const;
  * manifest.permissions -> capability enforcement lives in
  * @openmini/runtime's bridge/capabilities.ts.
  */
-export const BRIDGE_NAMESPACES = ['storage', 'navigation', 'user'] as const;
+export const BRIDGE_NAMESPACES = ['storage', 'navigation', 'user', 'network'] as const;
 export type BridgeNamespace = (typeof BRIDGE_NAMESPACES)[number];
 
 export const BRIDGE_ERROR_CODES = [
@@ -29,6 +29,15 @@ export const BRIDGE_ERROR_CODES = [
   'REQUEST_TIMEOUT',
   'RATE_LIMITED',
   'STORAGE_QUOTA_EXCEEDED',
+  // `NETWORK_REQUEST_FAILED` is deliberately coarse: a browser `fetch`
+  // network error carries no cause, so a blocked redirect, a CORS
+  // rejection, and a DNS/TLS/connection failure are genuinely
+  // indistinguishable to the host. The other three are reported precisely
+  // because the *host* itself caused them. See docs/security/bridge.md.
+  'NETWORK_REQUEST_FAILED',
+  'NETWORK_TIMEOUT',
+  'NETWORK_REQUEST_TOO_LARGE',
+  'NETWORK_RESPONSE_TOO_LARGE',
   'INTERNAL_ERROR',
 ] as const;
 export type BridgeErrorCode = (typeof BRIDGE_ERROR_CODES)[number];

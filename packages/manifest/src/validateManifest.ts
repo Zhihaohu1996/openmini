@@ -1,11 +1,15 @@
 import { MAX_NAME_LENGTH, SUPPORTED_SCHEMA_VERSION } from './constants';
 import { checkEntryPath } from './rules/entryPath';
 import { checkId } from './rules/id';
+import { checkNetwork } from './rules/networkDomains';
 import { checkPermissions } from './rules/permissions';
 import { checkVersion } from './rules/semver';
 import type { ManifestIssue, ManifestValidationResult, OpenMiniManifest } from './types';
 
-const KNOWN_FIELDS = ['schemaVersion', 'id', 'name', 'version', 'entry', 'permissions'] as const;
+const REQUIRED_FIELDS = ['schemaVersion', 'id', 'name', 'version', 'entry', 'permissions'] as const;
+/** Present-or-absent by design; `network` is gated by the `network` permission instead. */
+const OPTIONAL_FIELDS = ['network'] as const;
+const KNOWN_FIELDS = [...REQUIRED_FIELDS, ...OPTIONAL_FIELDS] as const;
 
 function checkSchemaVersion(value: unknown, path: string): ManifestIssue | null {
   if (typeof value !== 'number' || !Number.isInteger(value)) {
@@ -56,7 +60,7 @@ export function validateManifest(input: unknown): ManifestValidationResult {
   const record = input as Record<string, unknown>;
   const issues: ManifestIssue[] = [];
 
-  for (const field of KNOWN_FIELDS) {
+  for (const field of REQUIRED_FIELDS) {
     if (!(field in record)) {
       issues.push({ path: field, code: 'MISSING_FIELD', message: 'is required' });
       continue;
@@ -97,6 +101,8 @@ export function validateManifest(input: unknown): ManifestValidationResult {
     }
   }
 
+  issues.push(...checkNetwork(record.network, 'network', record.permissions));
+
   for (const key of Object.keys(record)) {
     if (!(KNOWN_FIELDS as readonly string[]).includes(key)) {
       issues.push({ path: key, code: 'UNKNOWN_FIELD', message: 'unknown field' });
@@ -115,6 +121,10 @@ export function validateManifest(input: unknown): ManifestValidationResult {
     entry: record.entry as string,
     permissions: record.permissions as OpenMiniManifest['permissions'],
   };
+
+  if (record.network !== undefined) {
+    manifest.network = { domains: (record.network as { domains: string[] }).domains };
+  }
 
   return { valid: true, manifest };
 }

@@ -3,6 +3,7 @@ import { OPENMINI_BRIDGE_CHANNEL, OPENMINI_BRIDGE_VERSION, type BridgeResponseEn
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MiniAppSandbox, SandboxStateListener } from '../sandbox/types';
 import { createBridgeDispatcher } from './dispatcher';
+import { BridgeNetworkError, BridgePermissionDeniedError } from './errors';
 import type { BridgeHandlerRegistry } from './types';
 
 function makeManifest(permissions: OpenMiniManifest['permissions']): OpenMiniManifest {
@@ -137,6 +138,54 @@ describe('createBridgeDispatcher', () => {
     await tick(2);
 
     expect(received[0]).toMatchObject({ ok: false, error: { code: 'INVALID_PARAMS' } });
+  });
+
+  it.each([
+    ['BridgePermissionDeniedError', new BridgePermissionDeniedError('denied'), 'PERMISSION_DENIED'],
+    ['a NETWORK_REQUEST_FAILED', new BridgeNetworkError('NETWORK_REQUEST_FAILED', 'failed'), 'NETWORK_REQUEST_FAILED'],
+    ['a NETWORK_TIMEOUT', new BridgeNetworkError('NETWORK_TIMEOUT', 'timed out'), 'NETWORK_TIMEOUT'],
+    [
+      'a NETWORK_RESPONSE_TOO_LARGE',
+      new BridgeNetworkError('NETWORK_RESPONSE_TOO_LARGE', 'too large'),
+      'NETWORK_RESPONSE_TOO_LARGE',
+    ],
+  ])('maps %s thrown by a handler to its own error code', async (_label, thrown, expectedCode) => {
+    const { sandbox } = createFakeSandbox();
+    const channel = new MessageChannel();
+    const received = collectResponses(channel.port2);
+    const handlers: BridgeHandlerRegistry = {
+      network: {
+        fetch: () => {
+          throw thrown;
+        },
+      },
+    };
+
+    createBridgeDispatcher({ manifest: makeManifest(['network']), sandbox, port: channel.port1, handlers });
+    channel.port2.postMessage(request({ method: 'network.fetch', params: { url: 'https://api.example.com/' } }));
+    await tick(2);
+
+    expect(received[0]).toMatchObject({ ok: false, error: { code: expectedCode } });
+  });
+
+  it('still hides an unexpected handler failure behind INTERNAL_ERROR', async () => {
+    const { sandbox } = createFakeSandbox();
+    const channel = new MessageChannel();
+    const received = collectResponses(channel.port2);
+    const handlers: BridgeHandlerRegistry = {
+      network: {
+        fetch: () => {
+          throw new Error('postgres://user:hunter2@internal-db/prod is unreachable');
+        },
+      },
+    };
+
+    createBridgeDispatcher({ manifest: makeManifest(['network']), sandbox, port: channel.port1, handlers });
+    channel.port2.postMessage(request({ method: 'network.fetch', params: { url: 'https://api.example.com/' } }));
+    await tick(2);
+
+    expect(received[0]).toMatchObject({ ok: false, error: { code: 'INTERNAL_ERROR', message: 'internal error' } });
+    expect(JSON.stringify(received[0])).not.toContain('hunter2');
   });
 
   it('rejects a request with a stale/foreign sessionId', async () => {

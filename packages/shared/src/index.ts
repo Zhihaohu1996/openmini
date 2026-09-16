@@ -26,3 +26,6 @@ export type {
   BridgeResponseEnvelope,
   BridgeCloseAckEnvelope,
 } from './bridge/protocol';
+
+export { NETWORK_FETCH_METHODS, NETWORK_BODILESS_METHODS, isNetworkFetchMethod } from './bridge/network';
+export type { NetworkFetchMethod, NetworkFetchRequest, NetworkFetchResponse } from './bridge/network';

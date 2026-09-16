@@ -43,7 +43,12 @@ export type {
 export { createBridgeDispatcher } from './bridge/dispatcher';
 export type { BridgeDispatcher, BridgeDispatcherOptions } from './bridge/dispatcher';
 export { computePermittedNamespaces, getMethodNamespace, isNamespaceKnown } from './bridge/capabilities';
-export { BridgeInvalidParamsError, BridgeStorageQuotaExceededError } from './bridge/errors';
+export {
+  BridgeInvalidParamsError,
+  BridgeNetworkError,
+  BridgePermissionDeniedError,
+  BridgeStorageQuotaExceededError,
+} from './bridge/errors';
 export {
   createStorageHandlers,
   DEFAULT_MAX_KEY_BYTES,
@@ -55,6 +60,14 @@ export { createInMemoryStorageProvider } from './bridge/handlers/storageProvider
 export type { MiniAppStorageProvider } from './bridge/handlers/storageProvider';
 export { createIndexedDbStorageProvider } from './bridge/handlers/indexedDbStorageProvider';
 export { createNavigationHandlers } from './bridge/handlers/navigation';
+export {
+  createNetworkHandlers,
+  isLoopbackHostname,
+  NETWORK_MAX_REQUEST_BODY_BYTES,
+  NETWORK_MAX_RESPONSE_BODY_BYTES,
+  NETWORK_REQUEST_TIMEOUT_MS,
+} from './bridge/handlers/network';
+export type { NetworkHandlerOptions } from './bridge/handlers/network';
 export { createUserHandlers } from './bridge/handlers/user';
 export type { StubUserProfile } from './bridge/handlers/user';
 export type { BridgeHandlerContext, BridgeMethodHandler, BridgeHandlerRegistry } from './bridge/types';

@@ -11,6 +11,7 @@ const PERMISSION_TO_NAMESPACE: Record<string, BridgeNamespace> = {
   storage: 'storage',
   navigation: 'navigation',
   user: 'user',
+  network: 'network',
 };
 
 /**

@@ -6,7 +6,15 @@
  * Exercises storage/user round trips and exposes small test-only hooks the
  * Playwright specs under e2e/ call directly via frame.evaluate().
  */
-import { createBridgeClient, createNavigationApi, createStorageApi, createUserApi, initOpenMiniBridge } from '@openmini/sdk';
+import {
+  createBridgeClient,
+  createNavigationApi,
+  createNetworkApi,
+  createStorageApi,
+  createUserApi,
+  initOpenMiniBridge,
+  type OpenMiniFetchInit,
+} from '@openmini/sdk';
 
 function setText(id: string, text: string): void {
   const el = document.getElementById(id);
@@ -15,12 +23,19 @@ function setText(id: string, text: string): void {
   }
 }
 
+/** What a network.fetch attempt looked like from inside the sandbox. */
+type NetworkAttempt =
+  | { ok: true; status: number; body: string }
+  | { ok: false; code: string; message: string };
+
 interface BridgeDemoTestHooks {
   closeAndReport(): Promise<'resolved' | 'rejected'>;
   sendForgedSession(): void;
   sendAfterClose(): void;
   setPersistedValue(key: string, value: string): Promise<void>;
   getPersistedValue(key: string): Promise<string | null>;
+  networkFetch(url: string, init?: OpenMiniFetchInit): Promise<NetworkAttempt>;
+  directFetch(url: string): Promise<string>;
 }
 
 declare global {
@@ -35,6 +50,7 @@ async function main(): Promise<void> {
   const storage = createStorageApi(client);
   const navigation = createNavigationApi(client);
   const user = createUserApi(client);
+  const network = createNetworkApi(client);
 
   try {
     await storage.set('greeting', 'hello from bridge');
@@ -97,6 +113,33 @@ async function main(): Promise<void> {
     },
     getPersistedValue(key) {
       return storage.get(key);
+    },
+    // Used by the Phase 7 network specs. Reports the host's error *code*
+    // rather than just failure, so a spec can assert how a failure was
+    // classified — including that a blocked redirect is not distinguishable
+    // from a CORS rejection.
+    async networkFetch(url, init): Promise<NetworkAttempt> {
+      try {
+        const response = await network.fetch(url, init);
+        setText('network-result', `${response.status}:${response.body}`);
+        return { ok: true, status: response.status, body: response.body };
+      } catch (error) {
+        const code = (error as { code?: string }).code ?? 'UNKNOWN';
+        const message = error instanceof Error ? error.message : 'unknown';
+        setText('network-result', `error:${code}`);
+        return { ok: false, code, message };
+      }
+    },
+    // Proves the sandbox's own CSP still blocks direct network access: this
+    // must fail even for a host the manifest allowlists, because the
+    // allowlist only governs the host-mediated path.
+    async directFetch(url): Promise<string> {
+      try {
+        const response = await fetch(url);
+        return `unexpected-success:${response.status}`;
+      } catch (error) {
+        return `blocked:${error instanceof Error ? error.name : 'unknown'}`;
+      }
     },
   };
 }

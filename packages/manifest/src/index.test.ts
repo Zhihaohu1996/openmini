@@ -22,7 +22,7 @@ const VALID_MANIFEST_JSON = JSON.stringify({
 describe('@openmini/manifest public API (via index.ts)', () => {
   it('exposes the expected constants', () => {
     expect(SUPPORTED_SCHEMA_VERSION).toBe(1);
-    expect(MANIFEST_PERMISSIONS).toEqual(['storage', 'navigation', 'user']);
+    expect(MANIFEST_PERMISSIONS).toEqual(['storage', 'navigation', 'user', 'network']);
     expect(MAX_NAME_LENGTH).toBe(100);
   });
 

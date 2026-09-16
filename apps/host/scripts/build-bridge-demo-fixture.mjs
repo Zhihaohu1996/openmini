@@ -79,6 +79,7 @@ async function main() {
 <p id="storage-result">pending...</p>
 <p id="user-result">pending...</p>
 <p id="close-result">pending...</p>
+<p id="network-result">pending...</p>
 <script>${script}</script>
 </body>
 </html>

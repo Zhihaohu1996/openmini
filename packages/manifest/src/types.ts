@@ -2,6 +2,14 @@ import type { MANIFEST_PERMISSIONS, SUPPORTED_SCHEMA_VERSION } from './constants
 
 export type ManifestPermission = (typeof MANIFEST_PERMISSIONS)[number];
 
+export interface ManifestNetworkDeclaration {
+  /**
+   * Exact hostnames this Mini App may reach through `openmini.network.fetch`.
+   * No wildcards, no subdomain matching — see docs/security/bridge.md.
+   */
+  domains: string[];
+}
+
 export interface OpenMiniManifest {
   schemaVersion: typeof SUPPORTED_SCHEMA_VERSION;
   id: string;
@@ -9,6 +17,8 @@ export interface OpenMiniManifest {
   version: string;
   entry: string;
   permissions: ManifestPermission[];
+  /** Required when `permissions` includes `network`, and forbidden when it does not. */
+  network?: ManifestNetworkDeclaration;
 }
 
 export type ManifestIssueCode =
@@ -23,7 +33,11 @@ export type ManifestIssueCode =
   | 'INVALID_VERSION'
   | 'INVALID_ENTRY_PATH'
   | 'UNKNOWN_PERMISSION'
-  | 'DUPLICATE_PERMISSION';
+  | 'DUPLICATE_PERMISSION'
+  | 'INVALID_NETWORK_DOMAIN'
+  | 'DUPLICATE_NETWORK_DOMAIN'
+  | 'MISSING_NETWORK_DECLARATION'
+  | 'UNEXPECTED_NETWORK_DECLARATION';
 
 export interface ManifestIssue {
   path: string;

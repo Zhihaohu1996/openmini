@@ -1,6 +1,18 @@
 export const SUPPORTED_SCHEMA_VERSION = 1 as const;
 
-export const MANIFEST_PERMISSIONS = ['storage', 'navigation', 'user'] as const;
+export const MANIFEST_PERMISSIONS = ['storage', 'navigation', 'user', 'network'] as const;
+
+/**
+ * A declarable `network.domains` entry: an exact, already-canonical host.
+ *
+ * Lowercase-only and bracketed-IPv6 are both deliberate. The runtime matches
+ * a declared entry against `new URL(...).hostname`, which the WHATWG URL
+ * parser always returns lowercased and — for IPv6 — bracketed (`[::1]`, not
+ * `::1`). Accepting any other spelling here would produce an entry that can
+ * never match anything, i.e. a permission that silently grants nothing.
+ */
+export const NETWORK_DOMAIN_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
+export const NETWORK_DOMAIN_IPV6_PATTERN = /^\[[0-9a-f:]+\]$/;
 
 export const MAX_NAME_LENGTH = 100;
 

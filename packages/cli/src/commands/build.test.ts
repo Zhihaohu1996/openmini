@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,6 +22,21 @@ const HTML = `<!doctype html>
 </head><body><h1 id="t">hi</h1><script></script></body></html>
 `;
 
+/**
+ * A multi-line `<style>` body. The CRLF hash mismatch (R1) is invisible with a
+ * single-line block, because only a body that spans lines contains the CRLF
+ * that normalization rewrites.
+ */
+const MULTI_LINE_STYLE_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Plain</title>
+<style>
+body {
+  color: rebeccapurple;
+}
+</style>
+</head><body><h1 id="t">hi</h1><script></script></body></html>
+`;
+
 const SCRIPT = `const el = document.getElementById('t');
 if (el) {
   el.textContent = 'built';
@@ -28,6 +44,59 @@ if (el) {
 `;
 
 const projects: string[] = [];
+
+function sha256Base64(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('base64');
+}
+
+function cspOf(document: string): string {
+  const match = /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(document);
+  if (!match?.[1]) {
+    throw new Error('the built document carries no CSP <meta>');
+  }
+  return match[1];
+}
+
+function directiveOf(csp: string, directive: string): string {
+  const found = csp
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${directive} `));
+  if (found === undefined) {
+    throw new Error(`the CSP has no ${directive} directive: ${csp}`);
+  }
+  return found.slice(directive.length + 1);
+}
+
+function hashSourcesOf(directiveValue: string): string[] {
+  return [...directiveValue.matchAll(/'(sha256-[A-Za-z0-9+/=]+)'/g)].map((match) => match[1] ?? '');
+}
+
+function bodiesOf(document: string, tag: 'script' | 'style'): string[] {
+  const pattern = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, 'gi');
+  return [...document.matchAll(pattern)].map((match) => match[1] ?? '');
+}
+
+/**
+ * The invariant: a document's CSP must bind the bytes that document actually
+ * carries. Every hash is recomputed from the written text rather than compared
+ * against what the builder reported, so this catches R1 and any future variant
+ * where hashing and assembly disagree about the content.
+ */
+function expectCspToBindShippedBytes(document: string): void {
+  const csp = cspOf(document);
+
+  const scriptBodies = bodiesOf(document, 'script');
+  expect(scriptBodies).toHaveLength(1);
+  expect(hashSourcesOf(directiveOf(csp, 'script-src'))).toEqual([
+    `sha256-${sha256Base64(scriptBodies[0] ?? '')}`,
+  ]);
+
+  const styleBodies = bodiesOf(document, 'style');
+  expect(hashSourcesOf(directiveOf(csp, 'style-src'))).toEqual(
+    styleBodies.map((body) => `sha256-${sha256Base64(body)}`),
+  );
+}
 
 async function makeProject(overrides: { manifest?: string; html?: string; script?: string } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'openmini-build-'));
@@ -124,6 +193,43 @@ describe('deterministic builds', () => {
     const a = await readFile(join(first, 'out', 'index.html'), 'utf8');
     const b = await readFile(join(second, 'out', 'index.html'), 'utf8');
     expect(a).not.toBe(b);
+  });
+});
+
+describe('the CSP binds the bytes that ship', () => {
+  it('matches the hashes of the written document for LF sources', async () => {
+    const dir = await makeProject({ html: MULTI_LINE_STYLE_HTML });
+    await buildPackage({ projectDir: dir, outDir: join(dir, 'out') });
+
+    expectCspToBindShippedBytes(await readFile(join(dir, 'out', 'index.html'), 'utf8'));
+  });
+
+  it('matches when the author’s sources are checked out with CRLF endings', async () => {
+    const dir = await makeProject({
+      html: MULTI_LINE_STYLE_HTML.replace(/\n/g, '\r\n'),
+      script: SCRIPT.replace(/\n/g, '\r\n'),
+    });
+    await buildPackage({ projectDir: dir, outDir: join(dir, 'out') });
+
+    expectCspToBindShippedBytes(await readFile(join(dir, 'out', 'index.html'), 'utf8'));
+  });
+
+  it('writes byte-identical output from CRLF and LF sources', async () => {
+    const lf = await makeProject({ html: MULTI_LINE_STYLE_HTML });
+    const crlf = await makeProject({ html: MULTI_LINE_STYLE_HTML.replace(/\n/g, '\r\n') });
+    await buildPackage({ projectDir: lf, outDir: join(lf, 'out') });
+    await buildPackage({ projectDir: crlf, outDir: join(crlf, 'out') });
+
+    const fromLf = await readFile(join(lf, 'out', 'index.html'));
+    const fromCrlf = await readFile(join(crlf, 'out', 'index.html'));
+    expect(fromCrlf.equals(fromLf)).toBe(true);
+  });
+
+  it('writes no CR byte anywhere in the document', async () => {
+    const dir = await makeProject({ html: MULTI_LINE_STYLE_HTML.replace(/\n/g, '\r\n') });
+    await buildPackage({ projectDir: dir, outDir: join(dir, 'out') });
+
+    expect(await readFile(join(dir, 'out', 'index.html'), 'utf8')).not.toContain('\r');
   });
 });
 

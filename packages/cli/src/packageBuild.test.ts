@@ -69,6 +69,33 @@ describe('hashing', () => {
   });
 });
 
+describe('line-ending normalization', () => {
+  // A single-line <style> cannot expose this: the mismatch only appears when
+  // the hashed body itself contains a line break.
+  const MULTI_LINE_STYLE = '<style>\nbody {\n  color: rebeccapurple;\n}\n</style>';
+  const LF_HTML = SHELL.replace('<title>t</title>', `<title>t</title>${MULTI_LINE_STYLE}`);
+  const CRLF_HTML = LF_HTML.replace(/\n/g, '\r\n');
+
+  it('hashes the normalized style body, not the author’s CRLF bytes', () => {
+    expect(assemble(CRLF_HTML).styleHashSources).toEqual(assemble(LF_HTML).styleHashSources);
+  });
+
+  it('hashes the normalized script body', () => {
+    const lfScript = 'const a = 1;\nconsole.log(a);\n';
+    expect(assemble(SHELL, lfScript.replace(/\n/g, '\r\n')).scriptHashSource).toBe(
+      assemble(SHELL, lfScript).scriptHashSource,
+    );
+  });
+
+  it('assembles a byte-identical document from CRLF and LF sources', () => {
+    expect(assemble(CRLF_HTML).html).toBe(assemble(LF_HTML).html);
+  });
+
+  it('emits no CR bytes at all', () => {
+    expect(assemble(CRLF_HTML, 'a();\r\nb();\r\n').html).not.toContain('\r');
+  });
+});
+
 describe('unsupported constructs are rejected at build time', () => {
   it.each([
     ['external script', '<script src="https://cdn.example.com/x.js"></script>', /external <script/],

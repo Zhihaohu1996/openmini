@@ -37,6 +37,20 @@ function sha256Base64(text: string): string {
 }
 
 /**
+ * Normalizes line endings to LF.
+ *
+ * This runs before anything else reads the text, and that ordering is the
+ * whole point: a CSP hash is only meaningful if it covers the bytes that
+ * actually ship. Normalizing *after* hashing — as `build.ts` previously did,
+ * on the assembled document — makes the policy bind text no browser ever
+ * sees, so a CRLF-checked-out multi-line `<style>` block silently fails its
+ * own hash check and the document renders unstyled.
+ */
+function normalizeLineEndings(text: string): string {
+  return text.replace(/\r\n/g, '\n');
+}
+
+/**
  * Each rule names a construct the sandbox CSP makes unusable, and says what
  * to do instead. The goal is that the tool teaches the platform's
  * constraints rather than just refusing.
@@ -140,7 +154,13 @@ function assertNoUnsupportedConstructs(html: string, script: string): void {
  * silently combining two security policies is precisely the failure mode
  * worth refusing.
  */
-export function assembleEntryDocument({ html, script }: AssembleOptions): AssembleResult {
+export function assembleEntryDocument(options: AssembleOptions): AssembleResult {
+  // Normalized first, so every step below — construct rejection, hashing,
+  // assembly — operates on exactly the text that will be written to disk.
+  // Every caller inherits the invariant by construction.
+  const html = normalizeLineEndings(options.html);
+  const script = normalizeLineEndings(options.script);
+
   if (CSP_META_PATTERN.test(html)) {
     throw new PackageBuildError(
       'the entry HTML already declares a Content-Security-Policy <meta>. The CLI generates the policy; remove yours rather than having two.',

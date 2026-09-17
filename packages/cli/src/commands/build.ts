@@ -75,11 +75,13 @@ export async function buildPackage(options: BuildOptions): Promise<BuildResult> 
     throw new PackageBuildError(`bundling produced no output for ${scriptPath}`);
   }
 
+  // `assembleEntryDocument` normalizes line endings to LF before it hashes
+  // anything, so the same source yields the same bytes regardless of the
+  // platform the build runs on *and* the CSP binds those exact bytes. Do not
+  // rewrite the document after this point: any post-assembly edit breaks the
+  // hashes the policy was built from.
   const assembled = assembleEntryDocument({ html, script });
-
-  // Normalize to LF so the same source yields the same bytes regardless of
-  // the platform the build runs on.
-  const documentBytes = Buffer.from(assembled.html.replace(/\r\n/g, '\n'), 'utf8');
+  const documentBytes = Buffer.from(assembled.html, 'utf8');
 
   const entryTarget = join(outDir, manifest.entry);
   await rm(outDir, { recursive: true, force: true });

@@ -216,6 +216,26 @@ which provider is plugged in):
   to close this gap — documented here the same way Phase 3/4 documented their
   own limits, rather than silently glossed over.
 
+- **Known limitation — storage is keyed on a self-asserted identity.** Every
+  key is scoped to `manifest.id`, but nothing verifies that a package is
+  entitled to the id it claims: `loadMiniAppFromUrl` performs no ownership,
+  signature, or integrity check. A package loaded from anywhere that declares
+  `"id": "com.example.other-app"` therefore reads and writes that app's
+  stored data.
+
+  This is bounded by the trust model rather than by a check: loading a Mini
+  App by URL is a host-operator action, documented in
+  [sandbox.md](sandbox.md) as "equivalent in trust terms to a user typing a
+  URL into their own browser's address bar". So it is not an unauthenticated
+  attack — but it does mean **`manifest.id` is not a security boundary**, and
+  storage must not be treated as a place only one app can reach.
+
+  Closing it requires verified package identity (integrity/signing), which is
+  deferred to a later phase. Until then, do not store anything in
+  `openmini.storage.*` whose disclosure to another loaded package would
+  matter — notably auth tokens, which is one reason real identity is
+  sequenced *after* package integrity rather than before it.
+
 ## Mini App SDK (`@openmini/sdk`)
 
 Two layers, both mini-app-facing:

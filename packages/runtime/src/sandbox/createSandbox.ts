@@ -1,4 +1,4 @@
-import { MINI_APP_SANDBOX_ATTRIBUTE } from './csp';
+import { MINI_APP_SANDBOX_ATTRIBUTE } from '@openmini/shared';
 import { OPENMINI_MESSAGE_CHANNEL, OPENMINI_PROTOCOL_VERSION, generateSessionId, isValidHandshakeAck } from './messaging';
 import { resolveEntryDocument } from './resourceProvider';
 import type {

@@ -118,11 +118,31 @@ precise path-traversal safety, are only loosely expressible in JSON Schema).
 
 ## Versioning policy
 
-`schemaVersion: 1`'s validation semantics, once released, are **frozen**. Only additive,
-backward-compatible clarifications are safe changes to make later. Any real behavior change —
-a stricter or looser rule, a new field, a different permission set — requires a new
-`schemaVersion` value and its own, separately validated branch. A manifest that was valid under
-v1 must remain valid under v1 forever.
+The invariant that actually matters, and which v1 holds to absolutely:
+
+> **A manifest that was valid under v1 must remain valid under v1 forever.**
+
+Within that rule, v1 accepts **additive** growth: a new *optional* field, or a new permission
+value, may be added without a version bump, because neither can invalidate a manifest that was
+already valid. Phase 7 did exactly this, adding the optional `network` declaration and the
+`network` permission.
+
+What still requires a **new `schemaVersion`**, with its own separately validated branch:
+
+- making an optional field required, or removing a field;
+- tightening or loosening an existing field's rule (a manifest that used to pass would now fail,
+  or vice versa);
+- changing the meaning of an existing field or permission.
+
+Note the trade-off this accepts: a v1 manifest using a newer optional field is not understood by
+an *older* v1 validator. Backward compatibility is guaranteed; forward compatibility is not.
+Tooling should therefore treat an unknown-field error from an older validator as "upgrade your
+tooling", not "the manifest is wrong".
+
+> **Corrected in Phase 8.** This section previously said that "a new field… requires a new
+> `schemaVersion`", which Phase 7's additive `network` field had already contradicted in
+> shipped code. The rule above documents what the project actually practices and keeps the
+> guarantee that matters.
 
 ## A note on implementation approach
 

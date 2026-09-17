@@ -23,12 +23,26 @@ organization can run it without depending on a single vendor.
 
 ## Status
 
-**Phase 2: Mini App manifest system.** Phase 1 delivered the monorepo scaffold
-(package layout, build tooling, linting, and test wiring). Phase 2 adds the
-first real developer-facing contract: the [`openmini.json` manifest
-format](docs/manifest.md), parsed and validated by `@openmini/manifest`. The
-mini-app runtime, sandbox, permission enforcement, SDK APIs, and CLI commands
-have not been implemented yet; they will land in later phases.
+**Phase 8: packaging format and CLI toolchain.** The project now has a working
+end-to-end path from source to sandboxed Mini App:
+
+- **Phase 2** — the [`openmini.json` manifest format](docs/manifest.md),
+  parsed and validated by `@openmini/manifest`.
+- **Phase 3** — the [sandbox boundary](docs/security/sandbox.md): an
+  `allow-scripts`-only iframe with a deny-by-default CSP, and a
+  `MessageChannel` handshake.
+- **Phase 4/5** — the [JS bridge and capability API](docs/security/bridge.md)
+  (`storage`, `navigation`, `user`), with persistent, quota-enforced storage.
+- **Phase 6** — loading a Mini App package from a URL.
+- **Phase 7** — host-mediated network access with a manifest-declared domain
+  allowlist.
+- **Phase 8** — [`@openmini/cli`](docs/cli.md): scaffold, validate, build and
+  serve Mini App packages.
+
+Still to come: verified package identity/integrity and signing, real
+user/auth/identity, and multi-view routing. See
+[docs/security/bridge.md](docs/security/bridge.md) for the boundaries the
+current phases deliberately do **not** provide.
 
 ## Repository layout
 
@@ -36,9 +50,9 @@ have not been implemented yet; they will land in later phases.
 apps/
   host/           the OpenMini host application (React + Vite + TypeScript)
 packages/
-  runtime/        @openmini/runtime — mini-app runtime (stub)
-  sdk/            @openmini/sdk — mini-app-facing SDK (stub)
-  cli/            @openmini/cli — command-line tooling (stub)
+  runtime/        @openmini/runtime — sandbox, lifecycle, bridge dispatcher
+  sdk/            @openmini/sdk — mini-app-facing SDK
+  cli/            @openmini/cli — scaffold/validate/build/serve packages
   ui/             @openmini/ui — shared React UI components
   shared/         @openmini/shared — shared types and utilities
   manifest/       @openmini/manifest — openmini.json manifest parser/validator

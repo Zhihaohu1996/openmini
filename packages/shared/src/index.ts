@@ -9,6 +9,12 @@ export const OPENMINI_SHARED_VERSION = '0.1.0';
 export { generateRandomId } from './id';
 
 export {
+  buildMiniAppCsp,
+  MINI_APP_BASE_CSP_DIRECTIVES,
+  MINI_APP_SANDBOX_ATTRIBUTE,
+} from './csp';
+
+export {
   OPENMINI_BRIDGE_CHANNEL,
   OPENMINI_BRIDGE_VERSION,
   BRIDGE_NAMESPACES,

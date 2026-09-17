@@ -18,7 +18,11 @@ export type { ResolveEntryDocumentResult } from './sandbox/resourceProvider';
 export { createFetchResourceProvider, normalizePackageBaseUrl } from './sandbox/fetchResourceProvider';
 export { loadMiniAppFromUrl } from './sandbox/loadMiniAppFromUrl';
 export type { LoadMiniAppResult } from './sandbox/loadMiniAppFromUrl';
-export { buildMiniAppCsp, MINI_APP_BASE_CSP_DIRECTIVES, MINI_APP_SANDBOX_ATTRIBUTE } from './sandbox/csp';
+// The CSP/sandbox policy lives in @openmini/shared (pure string logic, no DOM)
+// so the Node CLI can generate packages against the exact same definition the
+// runtime enforces. Re-exported here so `@openmini/runtime` consumers are
+// unaffected.
+export { buildMiniAppCsp, MINI_APP_BASE_CSP_DIRECTIVES, MINI_APP_SANDBOX_ATTRIBUTE } from '@openmini/shared';
 export { resolveContainedPath } from './sandbox/containment';
 export type { ContainmentFailureReason, ContainmentResult } from './sandbox/containment';
 export {

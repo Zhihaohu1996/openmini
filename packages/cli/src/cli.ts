@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { OPENMINI_CLI_VERSION } from './index';
+import { run } from './run.js';
 
-const args = process.argv.slice(2);
-
-if (args.includes('--version') || args.includes('-v')) {
-  console.log(OPENMINI_CLI_VERSION);
-} else {
-  console.log('openmini-cli — no commands implemented yet (Phase 1 scaffold).');
-  console.log(`Version: ${OPENMINI_CLI_VERSION}`);
-}
+run(process.argv.slice(2))
+  .then((code) => {
+    process.exitCode = code;
+  })
+  .catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });

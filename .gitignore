@@ -9,6 +9,8 @@ coverage/
 
 # Generated fixture output (rebuilt by build:fixtures before dev/build/test)
 apps/host/src/miniapp/fixtures/bridge-demo/generated/
+# Built by the CLI at fixture-build time; the e2e proves the tool produces it
+apps/host/public/miniapps/hello-styled/
 
 # Playwright test artifacts
 playwright-report/

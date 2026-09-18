@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { BridgeInvalidParamsError, BridgeStorageQuotaExceededError } from '../errors';
 import type { BridgeHandlerContext } from '../types';
 import { createInMemoryStorageProvider, type MiniAppStorageProvider } from './storageProvider';
-import { createStorageHandlers, DEFAULT_MAX_KEY_BYTES, DEFAULT_MAX_TOTAL_BYTES_PER_APP, DEFAULT_MAX_VALUE_BYTES } from './storage';
+import {
+  createStorageHandlers,
+  DEFAULT_MAX_KEY_BYTES,
+  DEFAULT_MAX_TOTAL_BYTES_PER_APP,
+  DEFAULT_MAX_VALUE_BYTES,
+} from './storage';
 
 function makeManifest(id: string): OpenMiniManifest {
   return {
@@ -43,7 +48,9 @@ describe('createStorageHandlers', () => {
   it('scopes storage by manifest id (a different app id sees nothing)', async () => {
     const handlers = createStorageHandlers();
     await handlers.set?.({ key: 'a', value: 'x' }, makeContext('com.openmini.app-a'));
-    await expect(handlers.get?.({ key: 'a' }, makeContext('com.openmini.app-b'))).resolves.toBe(null);
+    await expect(handlers.get?.({ key: 'a' }, makeContext('com.openmini.app-b'))).resolves.toBe(
+      null,
+    );
   });
 
   it('a fresh handler instance with no shared provider starts empty', async () => {
@@ -61,10 +68,13 @@ describe('createStorageHandlers', () => {
     },
   );
 
-  it.each([[{ key: 'a' }], [{ key: 'a', value: 42 }]])('set rejects malformed params %#', async (params) => {
-    const handlers = createStorageHandlers();
-    await expect(handlers.set?.(params, makeContext())).rejects.toThrow(BridgeInvalidParamsError);
-  });
+  it.each([[{ key: 'a' }], [{ key: 'a', value: 42 }]])(
+    'set rejects malformed params %#',
+    async (params) => {
+      const handlers = createStorageHandlers();
+      await expect(handlers.set?.(params, makeContext())).rejects.toThrow(BridgeInvalidParamsError);
+    },
+  );
 
   // R6 (Phase 8.5). `get` used to share `set`'s key-length check and so raised
   // STORAGE_QUOTA_EXCEEDED, making a read report a write-side failure mode and
@@ -84,9 +94,9 @@ describe('createStorageHandlers', () => {
 
     it('set with that same key is still a quota failure', async () => {
       const handlers = createStorageHandlers();
-      await expect(handlers.set?.({ key: oversizedKey, value: 'v' }, makeContext())).rejects.toThrow(
-        BridgeStorageQuotaExceededError,
-      );
+      await expect(
+        handlers.set?.({ key: oversizedKey, value: 'v' }, makeContext()),
+      ).rejects.toThrow(BridgeStorageQuotaExceededError);
     });
 
     it('rejects the over-long get key before consulting the provider', async () => {
@@ -120,7 +130,9 @@ describe('createStorageHandlers', () => {
       await handlers.set?.({ key: 'existing', value: 'kept' }, ctx);
 
       const oversizedKey = 'k'.repeat(DEFAULT_MAX_KEY_BYTES + 1);
-      await expect(handlers.set?.({ key: oversizedKey, value: 'v' }, ctx)).rejects.toThrow(BridgeStorageQuotaExceededError);
+      await expect(handlers.set?.({ key: oversizedKey, value: 'v' }, ctx)).rejects.toThrow(
+        BridgeStorageQuotaExceededError,
+      );
       await expect(handlers.get?.({ key: 'existing' }, ctx)).resolves.toBe('kept');
     });
 
@@ -130,7 +142,9 @@ describe('createStorageHandlers', () => {
       const key = '😀'.repeat(Math.ceil((DEFAULT_MAX_KEY_BYTES + 4) / 4));
       expect(key.length).toBeLessThan(DEFAULT_MAX_KEY_BYTES);
       expect(byteLength(key)).toBeGreaterThan(DEFAULT_MAX_KEY_BYTES);
-      await expect(handlers.set?.({ key, value: 'v' }, makeContext())).rejects.toThrow(BridgeStorageQuotaExceededError);
+      await expect(handlers.set?.({ key, value: 'v' }, makeContext())).rejects.toThrow(
+        BridgeStorageQuotaExceededError,
+      );
     });
 
     it('accepts a value of exactly the max value byte limit', async () => {
@@ -145,7 +159,9 @@ describe('createStorageHandlers', () => {
       await handlers.set?.({ key: 'k', value: 'original' }, ctx);
 
       const oversizedValue = 'v'.repeat(DEFAULT_MAX_VALUE_BYTES + 1);
-      await expect(handlers.set?.({ key: 'k', value: oversizedValue }, ctx)).rejects.toThrow(BridgeStorageQuotaExceededError);
+      await expect(handlers.set?.({ key: 'k', value: oversizedValue }, ctx)).rejects.toThrow(
+        BridgeStorageQuotaExceededError,
+      );
       await expect(handlers.get?.({ key: 'k' }, ctx)).resolves.toBe('original');
     });
 
@@ -154,7 +170,9 @@ describe('createStorageHandlers', () => {
       const value = '😀'.repeat(Math.ceil((DEFAULT_MAX_VALUE_BYTES + 4) / 4));
       expect(value.length).toBeLessThan(DEFAULT_MAX_VALUE_BYTES);
       expect(byteLength(value)).toBeGreaterThan(DEFAULT_MAX_VALUE_BYTES);
-      await expect(handlers.set?.({ key: 'k', value }, makeContext())).rejects.toThrow(BridgeStorageQuotaExceededError);
+      await expect(handlers.set?.({ key: 'k', value }, makeContext())).rejects.toThrow(
+        BridgeStorageQuotaExceededError,
+      );
     });
 
     // These total-quota tests raise maxValueBytes well above the default (via
@@ -176,7 +194,9 @@ describe('createStorageHandlers', () => {
       const value = 'v'.repeat(DEFAULT_MAX_TOTAL_BYTES_PER_APP - 1);
       await handlers.set?.({ key: 'k', value }, ctx);
 
-      await expect(handlers.set?.({ key: 'k2', value: 'x' }, ctx)).rejects.toThrow(BridgeStorageQuotaExceededError);
+      await expect(handlers.set?.({ key: 'k2', value: 'x' }, ctx)).rejects.toThrow(
+        BridgeStorageQuotaExceededError,
+      );
     });
 
     it('rejects a brand-new key at the total quota even with a tiny/empty value, proving key bytes alone count', async () => {
@@ -185,7 +205,9 @@ describe('createStorageHandlers', () => {
       const value = 'v'.repeat(DEFAULT_MAX_TOTAL_BYTES_PER_APP - 1);
       await handlers.set?.({ key: 'k', value }, ctx);
 
-      await expect(handlers.set?.({ key: 'brand-new-key', value: '' }, ctx)).rejects.toThrow(BridgeStorageQuotaExceededError);
+      await expect(handlers.set?.({ key: 'brand-new-key', value: '' }, ctx)).rejects.toThrow(
+        BridgeStorageQuotaExceededError,
+      );
     });
 
     it('overwrite accounting: shrinking an existing key at the total cap succeeds', async () => {
@@ -208,7 +230,9 @@ describe('createStorageHandlers', () => {
       await handlers.set?.({ key: 'k', value }, ctx);
 
       const biggerValue = 'v'.repeat(DEFAULT_MAX_TOTAL_BYTES_PER_APP);
-      await expect(handlers.set?.({ key: 'k', value: biggerValue }, ctx)).rejects.toThrow(BridgeStorageQuotaExceededError);
+      await expect(handlers.set?.({ key: 'k', value: biggerValue }, ctx)).rejects.toThrow(
+        BridgeStorageQuotaExceededError,
+      );
       // Unchanged after the rejected overwrite.
       await expect(handlers.get?.({ key: 'k' }, ctx)).resolves.toBe(value);
     });
@@ -220,10 +244,18 @@ describe('createStorageHandlers', () => {
     });
 
     it('supports overriding the default limits via options', async () => {
-      const handlers = createStorageHandlers({ maxKeyBytes: 4, maxValueBytes: 4, maxTotalBytesPerApp: 8 });
+      const handlers = createStorageHandlers({
+        maxKeyBytes: 4,
+        maxValueBytes: 4,
+        maxTotalBytesPerApp: 8,
+      });
       const ctx = makeContext();
-      await expect(handlers.set?.({ key: 'toolong', value: 'v' }, ctx)).rejects.toThrow(BridgeStorageQuotaExceededError);
-      await expect(handlers.set?.({ key: 'ok', value: 'toolong' }, ctx)).rejects.toThrow(BridgeStorageQuotaExceededError);
+      await expect(handlers.set?.({ key: 'toolong', value: 'v' }, ctx)).rejects.toThrow(
+        BridgeStorageQuotaExceededError,
+      );
+      await expect(handlers.set?.({ key: 'ok', value: 'toolong' }, ctx)).rejects.toThrow(
+        BridgeStorageQuotaExceededError,
+      );
       await expect(handlers.set?.({ key: 'ok', value: 'ok' }, ctx)).resolves.toBeUndefined();
     });
 

@@ -28,15 +28,11 @@ function setText(id: string, text: string): void {
  * at all, which is a distinct outcome from an error reply and must not be
  * silently reported as one.
  */
-type ForgedReply =
-  | { kind: 'error'; code: string }
-  | { kind: 'success' }
-  | { kind: 'timed-out' };
+type ForgedReply = { kind: 'error'; code: string } | { kind: 'success' } | { kind: 'timed-out' };
 
 /** What a network.fetch attempt looked like from inside the sandbox. */
 type NetworkAttempt =
-  | { ok: true; status: number; body: string }
-  | { ok: false; code: string; message: string };
+  { ok: true; status: number; body: string } | { ok: false; code: string; message: string };
 
 interface BridgeDemoTestHooks {
   closeAndReport(): Promise<'resolved' | 'rejected'>;

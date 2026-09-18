@@ -31,7 +31,9 @@ describe('createNavigationApi', () => {
     const sendCloseAck = vi.fn();
     const client: BridgeClient = {
       request: vi.fn(),
-      requestRaw: vi.fn().mockReturnValue({ requestId: 'close-1', result: Promise.reject(new Error('boom')) }),
+      requestRaw: vi
+        .fn()
+        .mockReturnValue({ requestId: 'close-1', result: Promise.reject(new Error('boom')) }),
       sendCloseAck,
     };
     const api = createNavigationApi(client);

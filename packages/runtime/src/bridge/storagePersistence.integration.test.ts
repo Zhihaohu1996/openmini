@@ -1,6 +1,10 @@
 import 'fake-indexeddb/auto';
 import type { OpenMiniManifest } from '@openmini/manifest';
-import { OPENMINI_BRIDGE_CHANNEL, OPENMINI_BRIDGE_VERSION, type BridgeResponseEnvelope } from '@openmini/shared';
+import {
+  OPENMINI_BRIDGE_CHANNEL,
+  OPENMINI_BRIDGE_VERSION,
+  type BridgeResponseEnvelope,
+} from '@openmini/shared';
 import { describe, expect, it } from 'vitest';
 import type { MiniAppSandbox, SandboxStateListener } from '../sandbox/types';
 import { createBridgeDispatcher } from './dispatcher';
@@ -85,15 +89,20 @@ describe('storage.* persistence across a simulated destroy/recreate', () => {
     const before = createFakeSandbox();
     const channelBefore = new MessageChannel();
     const responsesBefore: BridgeResponseEnvelope[] = [];
-    channelBefore.port2.onmessage = (event) => responsesBefore.push(event.data as BridgeResponseEnvelope);
+    channelBefore.port2.onmessage = (event) =>
+      responsesBefore.push(event.data as BridgeResponseEnvelope);
 
     createBridgeDispatcher({
       manifest,
       sandbox: before.sandbox,
       port: channelBefore.port1,
-      handlers: { storage: createStorageHandlers({ provider: createIndexedDbStorageProvider(dbName) }) },
+      handlers: {
+        storage: createStorageHandlers({ provider: createIndexedDbStorageProvider(dbName) }),
+      },
     });
-    channelBefore.port2.postMessage(requestEnvelope({ params: { key: 'greeting', value: 'still here' } }));
+    channelBefore.port2.postMessage(
+      requestEnvelope({ params: { key: 'greeting', value: 'still here' } }),
+    );
     await waitForResponse(responsesBefore, 0);
     expect(responsesBefore[0]).toMatchObject({ ok: true });
 
@@ -106,15 +115,20 @@ describe('storage.* persistence across a simulated destroy/recreate', () => {
     const after = createFakeSandbox();
     const channelAfter = new MessageChannel();
     const responsesAfter: BridgeResponseEnvelope[] = [];
-    channelAfter.port2.onmessage = (event) => responsesAfter.push(event.data as BridgeResponseEnvelope);
+    channelAfter.port2.onmessage = (event) =>
+      responsesAfter.push(event.data as BridgeResponseEnvelope);
 
     createBridgeDispatcher({
       manifest,
       sandbox: after.sandbox,
       port: channelAfter.port1,
-      handlers: { storage: createStorageHandlers({ provider: createIndexedDbStorageProvider(dbName) }) },
+      handlers: {
+        storage: createStorageHandlers({ provider: createIndexedDbStorageProvider(dbName) }),
+      },
     });
-    channelAfter.port2.postMessage(requestEnvelope({ method: 'storage.get', params: { key: 'greeting' } }));
+    channelAfter.port2.postMessage(
+      requestEnvelope({ method: 'storage.get', params: { key: 'greeting' } }),
+    );
     await waitForResponse(responsesAfter, 0);
 
     expect(responsesAfter[0]).toMatchObject({ ok: true, result: 'still here' });

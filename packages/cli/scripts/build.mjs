@@ -36,6 +36,10 @@ await build({
 // Resolved through node rather than a shell so there is no platform-specific
 // quoting and no dependency on PATH.
 const tsc = createRequire(import.meta.url).resolve('typescript/bin/tsc');
-execFileSync(process.execPath, [tsc, '-p', join(packageDir, 'tsconfig.json'), '--emitDeclarationOnly'], {
-  stdio: 'inherit',
-});
+execFileSync(
+  process.execPath,
+  [tsc, '-p', join(packageDir, 'tsconfig.json'), '--emitDeclarationOnly'],
+  {
+    stdio: 'inherit',
+  },
+);

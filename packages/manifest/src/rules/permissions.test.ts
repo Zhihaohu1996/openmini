@@ -7,7 +7,9 @@ describe('checkPermissions', () => {
   });
 
   it('accepts all supported permissions', () => {
-    expect(checkPermissions(['storage', 'navigation', 'user', 'network'], 'permissions')).toEqual([]);
+    expect(checkPermissions(['storage', 'navigation', 'user', 'network'], 'permissions')).toEqual(
+      [],
+    );
   });
 
   it('rejects a non-array value', () => {

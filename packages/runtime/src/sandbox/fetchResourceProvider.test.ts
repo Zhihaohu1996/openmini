@@ -107,12 +107,16 @@ describe('createFetchResourceProvider', () => {
   });
 
   it('throws on a non-2xx response', async () => {
-    global.fetch = vi
-      .fn()
-      .mockResolvedValue({ ok: false, status: 404, text: () => Promise.resolve('') }) as unknown as typeof fetch;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve(''),
+    }) as unknown as typeof fetch;
 
     const provider = createFetchResourceProvider('http://localhost:5173/miniapps/hello-remote/');
-    await expect(provider.readText('missing.html')).rejects.toThrow(/resource fetch failed \(404\)/);
+    await expect(provider.readText('missing.html')).rejects.toThrow(
+      /resource fetch failed \(404\)/,
+    );
   });
 
   it('throws when fetch itself rejects with a network error', async () => {
@@ -143,9 +147,9 @@ describe('createFetchResourceProvider', () => {
       await expect(createFetchResourceProvider(BASE).readText('index.html')).rejects.toThrow(
         /failed to fetch resource/,
       );
-      expect((fetchMock.mock.calls[0] as unknown as [unknown, { redirect: string }])[1].redirect).toBe(
-        'error',
-      );
+      expect(
+        (fetchMock.mock.calls[0] as unknown as [unknown, { redirect: string }])[1].redirect,
+      ).toBe('error');
     });
 
     it('fails mid-stream on an oversized resource, never accumulating the whole of it', async () => {

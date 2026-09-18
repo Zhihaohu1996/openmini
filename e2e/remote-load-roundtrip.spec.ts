@@ -5,9 +5,7 @@ test('loading a real static package by URL boots the Mini App through the existi
 }) => {
   await page.goto('/');
 
-  await page
-    .getByLabel('Mini App package URL')
-    .fill('http://localhost:5173/miniapps/hello-remote');
+  await page.getByLabel('Mini App package URL').fill('http://localhost:5173/miniapps/hello-remote');
   await page.getByRole('button', { name: 'Load by URL' }).click();
 
   const remoteHost = page.getByTestId('remote-miniapp-host');

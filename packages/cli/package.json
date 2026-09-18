@@ -9,7 +9,10 @@
   "bin": {
     "openmini": "./dist/cli.js"
   },
-  "files": ["src", "dist"],
+  "files": [
+    "src",
+    "dist"
+  ],
   "publishConfig": {
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts"

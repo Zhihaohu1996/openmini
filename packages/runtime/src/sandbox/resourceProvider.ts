@@ -29,9 +29,7 @@ export class StaticFixtureResourceProvider implements MiniAppResourceProvider {
   }
 }
 
-export type ResolveEntryDocumentResult =
-  | { ok: true; html: string }
-  | { ok: false; reason: string };
+export type ResolveEntryDocumentResult = { ok: true; html: string } | { ok: false; reason: string };
 
 /**
  * Resolves a manifest's `entry` to loadable document text: re-validates
@@ -52,6 +50,9 @@ export async function resolveEntryDocument(
     const html = await provider.readText(manifest.entry);
     return { ok: true, html };
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : 'failed to read entry resource' };
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : 'failed to read entry resource',
+    };
   }
 }

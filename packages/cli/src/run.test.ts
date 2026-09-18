@@ -65,12 +65,15 @@ describe('command-line contract', () => {
     expect((await readdir(dir)).sort()).toEqual(['openmini.json', 'package.json', 'src']);
   });
 
-  it.each(['build', 'init', 'validate', 'dev'])('prints usage for %s --help and exits 0', async (command) => {
-    // `build --help` used to throw "flag --help requires a value", because
-    // --help was parsed as a flag expecting a value like any other.
-    expect(await run([command, '--help'])).toBe(0);
-    expect(logs.join('\n')).toContain(`openmini ${command}`);
-  });
+  it.each(['build', 'init', 'validate', 'dev'])(
+    'prints usage for %s --help and exits 0',
+    async (command) => {
+      // `build --help` used to throw "flag --help requires a value", because
+      // --help was parsed as a flag expecting a value like any other.
+      expect(await run([command, '--help'])).toBe(0);
+      expect(logs.join('\n')).toContain(`openmini ${command}`);
+    },
+  );
 
   it('accepts the -h alias', async () => {
     expect(await run(['build', '-h'])).toBe(0);
@@ -148,7 +151,9 @@ describe('init command', () => {
     const dir = await tempDir('openmini-run-');
     await run(['init', dir, '--id', 'com.example.widget']);
 
-    const manifest = JSON.parse(await readFile(join(dir, 'openmini.json'), 'utf8')) as { name: string };
+    const manifest = JSON.parse(await readFile(join(dir, 'openmini.json'), 'utf8')) as {
+      name: string;
+    };
     expect(manifest.name).toBe('widget');
   });
 });

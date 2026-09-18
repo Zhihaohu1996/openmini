@@ -380,7 +380,9 @@ describe('build failures', () => {
   });
 
   it('propagates an unsupported construct from the document assembler', async () => {
-    const dir = await makeProject({ html: HTML.replace('<h1 id="t">hi</h1>', '<img src="x.png">') });
+    const dir = await makeProject({
+      html: HTML.replace('<h1 id="t">hi</h1>', '<img src="x.png">'),
+    });
     await expect(buildPackage({ projectDir: dir, outDir: join(dir, 'out') })).rejects.toThrow(
       /<img> element/,
     );

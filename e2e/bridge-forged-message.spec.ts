@@ -18,7 +18,9 @@ test('a forged request with a spoofed sessionId is answered SESSION_INVALID, and
   await page.getByRole('button', { name: 'Load', exact: true }).click();
 
   const frame = page.frameLocator('[data-testid="miniapp-container"] iframe');
-  await expect(frame.locator('#storage-result')).toHaveText('hello from bridge', { timeout: 10_000 });
+  await expect(frame.locator('#storage-result')).toHaveText('hello from bridge', {
+    timeout: 10_000,
+  });
   await expect(frame.locator('#user-result')).toHaveText('{"id":null,"displayName":null}');
 
   // Sent from inside the sandboxed script, over the real port.

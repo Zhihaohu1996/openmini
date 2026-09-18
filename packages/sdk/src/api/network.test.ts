@@ -22,7 +22,9 @@ describe('createNetworkApi', () => {
   });
 
   it('fetch() forwards method, headers and body alongside the url', async () => {
-    const request = vi.fn().mockResolvedValue({ status: 201, statusText: '', headers: {}, body: '' });
+    const request = vi
+      .fn()
+      .mockResolvedValue({ status: 201, statusText: '', headers: {}, body: '' });
     const api = createNetworkApi(fakeClient(request));
 
     await api.fetch('https://api.example.com/items', {
@@ -46,7 +48,8 @@ describe('NetworkFetchRequest contract', () => {
     // contract, so there is no channel through which a Mini App could
     // override what the host fixes. If any were added, `never` would stop
     // matching and this would fail to compile.
-    type TransportKeys = 'redirect' | 'credentials' | 'mode' | 'referrer' | 'referrerPolicy' | 'keepalive' | 'signal';
+    type TransportKeys =
+      'redirect' | 'credentials' | 'mode' | 'referrer' | 'referrerPolicy' | 'keepalive' | 'signal';
     type ForbiddenPresent = Extract<keyof NetworkFetchRequest, TransportKeys>;
 
     const nonePresent: ForbiddenPresent extends never ? true : false = true;

@@ -120,7 +120,9 @@ export function testApiPlugin(): Plugin {
       // A stale listener on this port must not take the whole dev server
       // down with it; only the cross-origin specs depend on it.
       crossOrigin.on('error', (error) => {
-        server.config.logger.warn(`[test-api] cross-origin fixture server unavailable: ${error.message}`);
+        server.config.logger.warn(
+          `[test-api] cross-origin fixture server unavailable: ${error.message}`,
+        );
       });
       crossOrigin.listen(TEST_API_CROSS_ORIGIN_PORT, 'localhost');
       server.httpServer?.on('close', () => crossOrigin.close());

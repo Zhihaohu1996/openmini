@@ -17,11 +17,7 @@ function isDeclarableDomain(value: string): boolean {
  * authoring mistake than an intent, so both are rejected rather than
  * silently normalized.
  */
-export function checkNetwork(
-  value: unknown,
-  path: string,
-  permissions: unknown,
-): ManifestIssue[] {
+export function checkNetwork(value: unknown, path: string, permissions: unknown): ManifestIssue[] {
   const declaresPermission = Array.isArray(permissions) && permissions.includes(NETWORK_PERMISSION);
 
   if (value === undefined) {
@@ -66,7 +62,10 @@ export function checkNetwork(
 
   const domains = record.domains;
   if (!Array.isArray(domains)) {
-    return [...issues, { path: `${path}.domains`, code: 'INVALID_TYPE', message: 'must be an array' }];
+    return [
+      ...issues,
+      { path: `${path}.domains`, code: 'INVALID_TYPE', message: 'must be an array' },
+    ];
   }
 
   const seen = new Set<string>();

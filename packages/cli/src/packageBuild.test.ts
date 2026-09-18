@@ -16,7 +16,9 @@ describe('CSP ownership', () => {
   it('generates the policy itself and places it in <head>', () => {
     const result = assemble(SHELL);
     expect(result.html).toContain('<meta http-equiv="Content-Security-Policy"');
-    expect(result.html.indexOf('Content-Security-Policy')).toBeLessThan(result.html.indexOf('<body'));
+    expect(result.html.indexOf('Content-Security-Policy')).toBeLessThan(
+      result.html.indexOf('<body'),
+    );
   });
 
   it('emits exactly the policy the runtime would build — not a copy of it', () => {
@@ -47,11 +49,16 @@ describe('hashing', () => {
   });
 
   it('changes the script hash when the script changes', () => {
-    expect(assemble(SHELL, 'a();').scriptHashSource).not.toBe(assemble(SHELL, 'b();').scriptHashSource);
+    expect(assemble(SHELL, 'a();').scriptHashSource).not.toBe(
+      assemble(SHELL, 'b();').scriptHashSource,
+    );
   });
 
   it('hashes an inline <style> block into style-src', () => {
-    const styled = SHELL.replace('<title>t</title>', '<title>t</title><style>body{color:red}</style>');
+    const styled = SHELL.replace(
+      '<title>t</title>',
+      '<title>t</title><style>body{color:red}</style>',
+    );
     const result = assemble(styled);
     expect(result.styleHashSources).toHaveLength(1);
     expect(result.csp).toContain(`style-src '${result.styleHashSources[0]}'`);

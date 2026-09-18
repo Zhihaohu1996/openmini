@@ -40,7 +40,9 @@ describe('initProject', () => {
     expect(JSON.parse(result)).toMatchObject({ id: 'com.example.hello', entry: 'index.html' });
     await expect(readFile(join(dir, 'package.json'), 'utf8')).resolves.toContain('@openmini/sdk');
     await expect(readFile(join(dir, 'src', 'index.html'), 'utf8')).resolves.toContain('<script>');
-    await expect(readFile(join(dir, 'src', 'main.ts'), 'utf8')).resolves.toContain('connectOpenMini');
+    await expect(readFile(join(dir, 'src', 'main.ts'), 'utf8')).resolves.toContain(
+      'connectOpenMini',
+    );
   });
 
   // R4 (Phase 8.5). `connectOpenMini` can now reject with HANDSHAKE_TIMEOUT
@@ -97,7 +99,9 @@ describe('initProject', () => {
       await mkdir(join(dir, 'src'), { recursive: true });
       await writeFile(join(dir, 'src', 'main.ts'), 'MINE', 'utf8');
 
-      await expect(initProject({ projectDir: dir, id: 'com.example.ok' })).rejects.toThrow(InitError);
+      await expect(initProject({ projectDir: dir, id: 'com.example.ok' })).rejects.toThrow(
+        InitError,
+      );
 
       expect(await exists(join(dir, 'openmini.json'))).toBe(false);
       expect(await exists(join(dir, 'package.json'))).toBe(false);
@@ -109,7 +113,9 @@ describe('initProject', () => {
       const dir = await tempDir();
       await writeFile(join(dir, 'openmini.json'), 'MINE', 'utf8');
 
-      await expect(initProject({ projectDir: dir, id: 'com.example.ok' })).rejects.toThrow(InitError);
+      await expect(initProject({ projectDir: dir, id: 'com.example.ok' })).rejects.toThrow(
+        InitError,
+      );
 
       expect(await readdir(dir)).toEqual(['openmini.json']);
       expect(await readFile(join(dir, 'openmini.json'), 'utf8')).toBe('MINE');

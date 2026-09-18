@@ -63,7 +63,7 @@ const UNSUPPORTED_CONSTRUCTS: ReadonlyArray<{
   {
     pattern: /<script\b[^>]*\bsrc\s*=/i,
     what: 'an external <script src="...">',
-    why: "script-src allows exactly one inline script by hash, so external scripts can never load. Import the code into your entry script instead — it is bundled and inlined for you.",
+    why: 'script-src allows exactly one inline script by hash, so external scripts can never load. Import the code into your entry script instead — it is bundled and inlined for you.',
   },
   {
     pattern: /<link\b[^>]*\brel\s*=\s*["']?stylesheet/i,

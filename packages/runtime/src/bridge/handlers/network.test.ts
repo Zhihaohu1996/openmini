@@ -1,6 +1,10 @@
 import type { OpenMiniManifest } from '@openmini/manifest';
 import { describe, expect, it, vi } from 'vitest';
-import { BridgeInvalidParamsError, BridgeNetworkError, BridgePermissionDeniedError } from '../errors';
+import {
+  BridgeInvalidParamsError,
+  BridgeNetworkError,
+  BridgePermissionDeniedError,
+} from '../errors';
 import type { BridgeHandlerContext, BridgeMethodHandler } from '../types';
 import { createNetworkHandlers, isLoopbackHostname } from './network';
 
@@ -16,7 +20,10 @@ const MANIFEST: OpenMiniManifest = {
 
 const CTX = { manifest: MANIFEST } as BridgeHandlerContext;
 
-function okResponse(body = 'hello', init: { status?: number; headers?: Record<string, string> } = {}): Response {
+function okResponse(
+  body = 'hello',
+  init: { status?: number; headers?: Record<string, string> } = {},
+): Response {
   return new Response(body, {
     status: init.status ?? 200,
     headers: init.headers ?? { 'content-type': 'text/plain' },
@@ -24,7 +31,9 @@ function okResponse(body = 'hello', init: { status?: number; headers?: Record<st
 }
 
 /** The registry is `Record<string, handler>`, so resolve `fetch` once here. */
-function networkFetchHandler(options: Parameters<typeof createNetworkHandlers>[0] = {}): BridgeMethodHandler {
+function networkFetchHandler(
+  options: Parameters<typeof createNetworkHandlers>[0] = {},
+): BridgeMethodHandler {
   const handler = createNetworkHandlers(options).fetch;
   if (!handler) {
     throw new Error('createNetworkHandlers must expose a fetch method');
@@ -121,7 +130,9 @@ describe('network.fetch URL contract', () => {
 
   it('rejects a non-absolute URL', async () => {
     const { fetch } = setup();
-    await expect(fetch({ url: '/relative/path' }, CTX)).rejects.toBeInstanceOf(BridgeInvalidParamsError);
+    await expect(fetch({ url: '/relative/path' }, CTX)).rejects.toBeInstanceOf(
+      BridgeInvalidParamsError,
+    );
   });
 
   it('rejects a non-default https port', async () => {
@@ -161,7 +172,9 @@ describe('network.fetch http loopback exception', () => {
 
   it('still rejects non-loopback http even when the flag is enabled', async () => {
     const { fetch, fetchImpl } = setup({ allowInsecureLoopback: true });
-    await expect(fetch({ url: 'http://api.example.com/' }, CTX)).rejects.toThrow(/unsupported URL scheme/);
+    await expect(fetch({ url: 'http://api.example.com/' }, CTX)).rejects.toThrow(
+      /unsupported URL scheme/,
+    );
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
@@ -247,11 +260,17 @@ describe('network.fetch header contract', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it.each(['authorization', 'Authorization', 'AUTHORIZATION'])('passes %s through', async (name) => {
-    const { fetch, fetchImpl } = setup();
-    await fetch({ url: 'https://api.example.com/', headers: { [name]: 'Bearer app-token' } }, CTX);
-    expect(lastInit(fetchImpl).headers).toMatchObject({ authorization: 'Bearer app-token' });
-  });
+  it.each(['authorization', 'Authorization', 'AUTHORIZATION'])(
+    'passes %s through',
+    async (name) => {
+      const { fetch, fetchImpl } = setup();
+      await fetch(
+        { url: 'https://api.example.com/', headers: { [name]: 'Bearer app-token' } },
+        CTX,
+      );
+      expect(lastInit(fetchImpl).headers).toMatchObject({ authorization: 'Bearer app-token' });
+    },
+  );
 
   it('passes ordinary application headers through, lowercased', async () => {
     const { fetch, fetchImpl } = setup();
@@ -322,7 +341,9 @@ describe('network.fetch host-fixed transport options', () => {
 
 describe('network.fetch failure classification', () => {
   it('reports a rejected fetch as the generic NETWORK_REQUEST_FAILED', async () => {
-    const fetchImpl = vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) as unknown as typeof fetch;
+    const fetchImpl = vi
+      .fn()
+      .mockRejectedValue(new TypeError('Failed to fetch')) as unknown as typeof fetch;
     const fetchHandler = networkFetchHandler({ fetchImpl });
 
     await expect(fetchHandler({ url: 'https://api.example.com/' }, CTX)).rejects.toMatchObject({
@@ -334,8 +355,12 @@ describe('network.fetch failure classification', () => {
     // Both reach us as a bare TypeError with no cause attached, so the host
     // genuinely cannot tell them apart. Pinned so a future change cannot
     // quietly start claiming a distinction that does not exist.
-    const redirectBlocked = vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) as unknown as typeof fetch;
-    const corsRejected = vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) as unknown as typeof fetch;
+    const redirectBlocked = vi
+      .fn()
+      .mockRejectedValue(new TypeError('Failed to fetch')) as unknown as typeof fetch;
+    const corsRejected = vi
+      .fn()
+      .mockRejectedValue(new TypeError('Failed to fetch')) as unknown as typeof fetch;
 
     const redirectError = await Promise.resolve(
       networkFetchHandler({ fetchImpl: redirectBlocked })({ url: 'https://api.example.com/' }, CTX),
@@ -352,7 +377,9 @@ describe('network.fetch failure classification', () => {
     const fetchImpl = vi.fn(
       (_url: string, init: FetchInit) =>
         new Promise<Response>((_resolve, reject) => {
-          init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+          init.signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError')),
+          );
         }),
     ) as unknown as typeof fetch;
 
@@ -421,7 +448,9 @@ describe('network.fetch size limits', () => {
     // reachable case, since HEAD is on the method allowlist — so the reader
     // path must not be entered at all.
     const { fetch } = setup({}, response);
-    await expect(fetch({ url: 'https://api.example.com/', method: 'HEAD' }, CTX)).resolves.toMatchObject({
+    await expect(
+      fetch({ url: 'https://api.example.com/', method: 'HEAD' }, CTX),
+    ).resolves.toMatchObject({
       status: response.status,
       body: '',
     });

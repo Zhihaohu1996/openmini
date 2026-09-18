@@ -41,11 +41,17 @@ export interface ConnectOpenMiniOptions {
  * Always settles — see `connectTimeoutMs`. Callers must handle the rejection;
  * a Mini App that ignores it has no bridge and no way to say so.
  */
-export async function connectOpenMini(options: ConnectOpenMiniOptions = {}): Promise<OpenMiniBridge> {
+export async function connectOpenMini(
+  options: ConnectOpenMiniOptions = {},
+): Promise<OpenMiniBridge> {
   const { sessionId, port } = await initOpenMiniBridge(options.target, {
     connectTimeoutMs: options.connectTimeoutMs,
   });
-  const client = createBridgeClient({ port, sessionId, requestTimeoutMs: options.requestTimeoutMs });
+  const client = createBridgeClient({
+    port,
+    sessionId,
+    requestTimeoutMs: options.requestTimeoutMs,
+  });
   return {
     storage: createStorageApi(client),
     navigation: createNavigationApi(client),

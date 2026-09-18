@@ -8,11 +8,7 @@ export const OPENMINI_SHARED_VERSION = '0.1.0';
 
 export { generateRandomId } from './id';
 
-export {
-  buildMiniAppCsp,
-  MINI_APP_BASE_CSP_DIRECTIVES,
-  MINI_APP_SANDBOX_ATTRIBUTE,
-} from './csp';
+export { buildMiniAppCsp, MINI_APP_BASE_CSP_DIRECTIVES, MINI_APP_SANDBOX_ATTRIBUTE } from './csp';
 
 export {
   OPENMINI_BRIDGE_CHANNEL,
@@ -33,5 +29,13 @@ export type {
   BridgeCloseAckEnvelope,
 } from './bridge/protocol';
 
-export { NETWORK_FETCH_METHODS, NETWORK_BODILESS_METHODS, isNetworkFetchMethod } from './bridge/network';
-export type { NetworkFetchMethod, NetworkFetchRequest, NetworkFetchResponse } from './bridge/network';
+export {
+  NETWORK_FETCH_METHODS,
+  NETWORK_BODILESS_METHODS,
+  isNetworkFetchMethod,
+} from './bridge/network';
+export type {
+  NetworkFetchMethod,
+  NetworkFetchRequest,
+  NetworkFetchResponse,
+} from './bridge/network';

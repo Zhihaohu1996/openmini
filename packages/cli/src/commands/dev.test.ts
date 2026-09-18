@@ -21,7 +21,9 @@ async function makePackage() {
   await writeFile(join(dir, 'openmini.json'), MANIFEST, 'utf8');
   await writeFile(join(dir, 'index.html'), '<!doctype html><html></html>', 'utf8');
   // A sibling of the package root that must never be reachable.
-  await writeFile(join(dir, '..', 'openmini-dev-secret.txt'), 'SECRET', 'utf8').catch(() => undefined);
+  await writeFile(join(dir, '..', 'openmini-dev-secret.txt'), 'SECRET', 'utf8').catch(
+    () => undefined,
+  );
   return dir;
 }
 

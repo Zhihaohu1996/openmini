@@ -9,11 +9,7 @@ import type { OpenMiniManifest } from '@openmini/manifest';
 export type SandboxState = 'created' | 'loading' | 'ready' | 'running' | 'error' | 'destroyed';
 
 export type SandboxErrorCode =
-  | 'MANIFEST_INVALID'
-  | 'LOAD_FAILED'
-  | 'HANDSHAKE_TIMEOUT'
-  | 'HANDSHAKE_INVALID'
-  | 'NAVIGATED_AWAY';
+  'MANIFEST_INVALID' | 'LOAD_FAILED' | 'HANDSHAKE_TIMEOUT' | 'HANDSHAKE_INVALID' | 'NAVIGATED_AWAY';
 
 export interface SandboxErrorInfo {
   code: SandboxErrorCode;

@@ -39,7 +39,9 @@ function readKey(params: unknown): string {
  * `createIndexedDbStorageProvider()`) is supplied; with no provider, this
  * falls back to the original Phase 4 in-memory behavior.
  */
-export function createStorageHandlers(options: StorageHandlerOptions = {}): Record<string, BridgeMethodHandler> {
+export function createStorageHandlers(
+  options: StorageHandlerOptions = {},
+): Record<string, BridgeMethodHandler> {
   const {
     provider = createInMemoryStorageProvider(),
     maxKeyBytes = DEFAULT_MAX_KEY_BYTES,
@@ -92,7 +94,9 @@ export function createStorageHandlers(options: StorageHandlerOptions = {}): Reco
           ? currentTotal + byteLength(key) + valueBytes
           : currentTotal - byteLength(existingValue) + valueBytes;
       if (candidateTotal > maxTotalBytesPerApp) {
-        throw new BridgeStorageQuotaExceededError(`storing this value would exceed the ${maxTotalBytesPerApp}-byte total quota`);
+        throw new BridgeStorageQuotaExceededError(
+          `storing this value would exceed the ${maxTotalBytesPerApp}-byte total quota`,
+        );
       }
 
       await provider.set(appId, key, value);

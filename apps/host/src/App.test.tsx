@@ -25,9 +25,11 @@ describe('App remote "load by URL" control', () => {
       entry: 'index.html',
       permissions: [],
     });
-    global.fetch = vi
-      .fn()
-      .mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve(manifestJson) }) as unknown as typeof fetch;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(manifestJson),
+    }) as unknown as typeof fetch;
 
     render(<App />);
     fireEvent.change(screen.getByLabelText('Mini App package URL'), {
@@ -40,9 +42,11 @@ describe('App remote "load by URL" control', () => {
   });
 
   it('shows the fetch-failure reason and does not render MiniAppHost on failure', async () => {
-    global.fetch = vi
-      .fn()
-      .mockResolvedValue({ ok: false, status: 404, text: () => Promise.resolve('') }) as unknown as typeof fetch;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve(''),
+    }) as unknown as typeof fetch;
 
     render(<App />);
     fireEvent.change(screen.getByLabelText('Mini App package URL'), {

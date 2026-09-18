@@ -34,11 +34,7 @@ describe('the served hello-styled package', () => {
   });
 
   it('carries the manifest through byte-for-byte from the authoring project', async () => {
-    const authored = join(
-      dirname(fileURLToPath(import.meta.url)),
-      'hello-styled',
-      'openmini.json',
-    );
+    const authored = join(dirname(fileURLToPath(import.meta.url)), 'hello-styled', 'openmini.json');
 
     // `buildPackage` copies the manifest bytes rather than re-serializing, so
     // any drift here means the artifact stopped coming from the real build.

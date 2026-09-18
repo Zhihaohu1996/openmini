@@ -126,7 +126,11 @@ describe('single source of truth', () => {
 
   function sourceFiles(dir: string, found: string[] = []): string[] {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (['node_modules', 'dist', '.git', 'generated', 'test-results', 'playwright-report'].includes(entry.name)) {
+      if (
+        ['node_modules', 'dist', '.git', 'generated', 'test-results', 'playwright-report'].includes(
+          entry.name,
+        )
+      ) {
         continue;
       }
       const full = join(dir, entry.name);

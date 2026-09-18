@@ -9,7 +9,9 @@ import { expect, test } from '@playwright/test';
  * `error`) rather than asserting the navigation itself is prevented — it is
  * not.
  */
-test('self-navigation of the sandboxed frame is detected after the fact, not prevented', async ({ page }) => {
+test('self-navigation of the sandboxed frame is detected after the fact, not prevented', async ({
+  page,
+}) => {
   await page.goto('/?scenario=self-navigate');
   const status = page.getByTestId('miniapp-status');
 

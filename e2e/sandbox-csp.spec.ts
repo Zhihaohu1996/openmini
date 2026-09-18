@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 
-test('the Mini App document enforces its CSP: no unsafe script sources, network blocked', async ({ page }) => {
+test('the Mini App document enforces its CSP: no unsafe script sources, network blocked', async ({
+  page,
+}) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Load', exact: true }).click();
 
@@ -14,7 +16,9 @@ test('the Mini App document enforces its CSP: no unsafe script sources, network 
   // connect-src 'none' blocks the fixture's own fetch() call.
   await expect(frame.locator('#connect-check')).toHaveText('blocked', { timeout: 10_000 });
 
-  const cspContent = await frame.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');
+  const cspContent = await frame
+    .locator('meta[http-equiv="Content-Security-Policy"]')
+    .getAttribute('content');
   expect(cspContent).toBeTruthy();
   expect(cspContent).toMatch(/script-src 'sha256-[A-Za-z0-9+/]+=*'/);
   expect(cspContent?.toLowerCase()).not.toContain('unsafe-inline');

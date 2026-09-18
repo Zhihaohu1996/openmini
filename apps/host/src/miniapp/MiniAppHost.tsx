@@ -102,10 +102,18 @@ export function MiniAppHost({ manifestJson, resourceProvider }: MiniAppHostProps
   return (
     <div>
       <p data-testid="miniapp-status">status: {state}</p>
-      <button type="button" onClick={handleLoad} disabled={state !== 'idle' && state !== 'destroyed'}>
+      <button
+        type="button"
+        onClick={handleLoad}
+        disabled={state !== 'idle' && state !== 'destroyed'}
+      >
         Load
       </button>
-      <button type="button" onClick={handleDestroy} disabled={state === 'idle' || state === 'destroyed'}>
+      <button
+        type="button"
+        onClick={handleDestroy}
+        disabled={state === 'idle' || state === 'destroyed'}
+      >
         Destroy
       </button>
       <div ref={containerRef} data-testid="miniapp-container" />

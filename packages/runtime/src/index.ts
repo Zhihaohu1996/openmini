@@ -27,7 +27,11 @@ export type { LoadMiniAppResult } from './sandbox/loadMiniAppFromUrl';
 // so the Node CLI can generate packages against the exact same definition the
 // runtime enforces. Re-exported here so `@openmini/runtime` consumers are
 // unaffected.
-export { buildMiniAppCsp, MINI_APP_BASE_CSP_DIRECTIVES, MINI_APP_SANDBOX_ATTRIBUTE } from '@openmini/shared';
+export {
+  buildMiniAppCsp,
+  MINI_APP_BASE_CSP_DIRECTIVES,
+  MINI_APP_SANDBOX_ATTRIBUTE,
+} from '@openmini/shared';
 export { resolveContainedPath } from './sandbox/containment';
 export type { ContainmentFailureReason, ContainmentResult } from './sandbox/containment';
 export {
@@ -38,7 +42,11 @@ export {
   isValidHandshakeAck,
   isValidHandshakeInitEvent,
 } from './sandbox/messaging';
-export type { OpenMiniEnvelope, OpenMiniMessageType, BootstrapMessageEventLike } from './sandbox/messaging';
+export type {
+  OpenMiniEnvelope,
+  OpenMiniMessageType,
+  BootstrapMessageEventLike,
+} from './sandbox/messaging';
 export type {
   MiniAppResourceProvider,
   MiniAppSandbox,
@@ -51,7 +59,11 @@ export type {
 
 export { createBridgeDispatcher } from './bridge/dispatcher';
 export type { BridgeDispatcher, BridgeDispatcherOptions } from './bridge/dispatcher';
-export { computePermittedNamespaces, getMethodNamespace, isNamespaceKnown } from './bridge/capabilities';
+export {
+  computePermittedNamespaces,
+  getMethodNamespace,
+  isNamespaceKnown,
+} from './bridge/capabilities';
 export {
   BridgeInvalidParamsError,
   BridgeNetworkError,
@@ -79,4 +91,8 @@ export {
 export type { NetworkHandlerOptions } from './bridge/handlers/network';
 export { createUserHandlers } from './bridge/handlers/user';
 export type { StubUserProfile } from './bridge/handlers/user';
-export type { BridgeHandlerContext, BridgeMethodHandler, BridgeHandlerRegistry } from './bridge/types';
+export type {
+  BridgeHandlerContext,
+  BridgeMethodHandler,
+  BridgeHandlerRegistry,
+} from './bridge/types';

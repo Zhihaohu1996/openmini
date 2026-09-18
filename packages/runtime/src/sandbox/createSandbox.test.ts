@@ -117,7 +117,12 @@ describe('createMiniAppSandbox', () => {
     const deps = createDeps(fakeIframe);
     const onBridgeReady = vi.fn();
     const sandbox = createMiniAppSandbox(
-      { manifest: makeManifest(), resourceProvider: okProvider, container: createContainer(), onBridgeReady },
+      {
+        manifest: makeManifest(),
+        resourceProvider: okProvider,
+        container: createContainer(),
+        onBridgeReady,
+      },
       deps,
     );
 

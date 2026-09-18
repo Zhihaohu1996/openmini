@@ -1,4 +1,8 @@
-import { OPENMINI_BRIDGE_CHANNEL, OPENMINI_BRIDGE_VERSION, type BridgeRequestEnvelope } from '@openmini/shared';
+import {
+  OPENMINI_BRIDGE_CHANNEL,
+  OPENMINI_BRIDGE_VERSION,
+  type BridgeRequestEnvelope,
+} from '@openmini/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBridgeClient } from './client';
 
@@ -6,10 +10,19 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function respondOnce(port: MessagePort, sessionId: string, build: (req: BridgeRequestEnvelope) => Record<string, unknown>) {
+function respondOnce(
+  port: MessagePort,
+  sessionId: string,
+  build: (req: BridgeRequestEnvelope) => Record<string, unknown>,
+) {
   port.onmessage = (event) => {
     const req = event.data as BridgeRequestEnvelope;
-    port.postMessage({ channel: OPENMINI_BRIDGE_CHANNEL, version: OPENMINI_BRIDGE_VERSION, sessionId, ...build(req) });
+    port.postMessage({
+      channel: OPENMINI_BRIDGE_CHANNEL,
+      version: OPENMINI_BRIDGE_VERSION,
+      sessionId,
+      ...build(req),
+    });
   };
 }
 
@@ -59,7 +72,10 @@ describe('createBridgeClient', () => {
     };
     const client = createBridgeClient({ port: channel.port1, sessionId: 's1' });
 
-    const [a, b] = await Promise.all([client.request('storage.get', {}), client.request('user.getProfile', {})]);
+    const [a, b] = await Promise.all([
+      client.request('storage.get', {}),
+      client.request('user.getProfile', {}),
+    ]);
     expect(a).toBe('storage.get');
     expect(b).toBe('user.getProfile');
   });
@@ -67,7 +83,11 @@ describe('createBridgeClient', () => {
   it('rejects with REQUEST_TIMEOUT if no response arrives before the timeout', async () => {
     vi.useFakeTimers();
     const channel = new MessageChannel();
-    const client = createBridgeClient({ port: channel.port1, sessionId: 's1', requestTimeoutMs: 1000 });
+    const client = createBridgeClient({
+      port: channel.port1,
+      sessionId: 's1',
+      requestTimeoutMs: 1000,
+    });
 
     const assertion = expect(client.request('storage.get', { key: 'a' })).rejects.toMatchObject({
       code: 'REQUEST_TIMEOUT',
@@ -83,7 +103,11 @@ describe('createBridgeClient', () => {
     channel.port2.onmessage = (event) => {
       capturedRequestId = (event.data as BridgeRequestEnvelope).requestId;
     };
-    const client = createBridgeClient({ port: channel.port1, sessionId: 's1', requestTimeoutMs: 5 });
+    const client = createBridgeClient({
+      port: channel.port1,
+      sessionId: 's1',
+      requestTimeoutMs: 5,
+    });
 
     const assertion = expect(client.request('storage.get', { key: 'a' })).rejects.toMatchObject({
       code: 'REQUEST_TIMEOUT',
@@ -112,9 +136,15 @@ describe('createBridgeClient', () => {
       ok: true,
       result: 'hello',
     }));
-    const client = createBridgeClient({ port: channel.port1, sessionId: 's1', requestTimeoutMs: 20 });
+    const client = createBridgeClient({
+      port: channel.port1,
+      sessionId: 's1',
+      requestTimeoutMs: 20,
+    });
 
-    await expect(client.request('storage.get', { key: 'a' })).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' });
+    await expect(client.request('storage.get', { key: 'a' })).rejects.toMatchObject({
+      code: 'REQUEST_TIMEOUT',
+    });
   });
 
   it('requestRaw exposes the requestId used for the call', async () => {

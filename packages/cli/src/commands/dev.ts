@@ -104,7 +104,11 @@ interface ServeResult {
   contentType?: string;
 }
 
-async function handleRequest(rawUrl: string, packageDir: string, entry: string): Promise<ServeResult> {
+async function handleRequest(
+  rawUrl: string,
+  packageDir: string,
+  entry: string,
+): Promise<ServeResult> {
   // Strip query/hash before any path handling; they never select a file.
   const pathname = rawUrl.split('?')[0]?.split('#')[0] ?? '/';
   const requested = pathname === '/' ? entry : decodeURIComponent(pathname.replace(/^\/+/, ''));

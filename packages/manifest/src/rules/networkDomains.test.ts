@@ -11,7 +11,11 @@ describe('checkNetwork', () => {
 
   it('accepts valid hostnames when the permission is requested', () => {
     expect(
-      checkNetwork({ domains: ['api.example.com', 'localhost', '127.0.0.1', '[::1]'] }, 'network', WITH_NETWORK),
+      checkNetwork(
+        { domains: ['api.example.com', 'localhost', '127.0.0.1', '[::1]'] },
+        'network',
+        WITH_NETWORK,
+      ),
     ).toEqual([]);
   });
 

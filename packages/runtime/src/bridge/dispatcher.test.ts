@@ -1,5 +1,9 @@
 import type { OpenMiniManifest } from '@openmini/manifest';
-import { OPENMINI_BRIDGE_CHANNEL, OPENMINI_BRIDGE_VERSION, type BridgeResponseEnvelope } from '@openmini/shared';
+import {
+  OPENMINI_BRIDGE_CHANNEL,
+  OPENMINI_BRIDGE_VERSION,
+  type BridgeResponseEnvelope,
+} from '@openmini/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MiniAppSandbox, SandboxStateListener } from '../sandbox/types';
 import { createBridgeDispatcher } from './dispatcher';
@@ -71,9 +75,13 @@ describe('createBridgeDispatcher', () => {
     const received = collectResponses(channel.port2);
 
     createBridgeDispatcher({ manifest: makeManifest(['storage']), sandbox, port: channel.port1 });
-    channel.port2.postMessage(request({ method: 'storage.set', params: { key: 'a', value: 'hi' } }));
+    channel.port2.postMessage(
+      request({ method: 'storage.set', params: { key: 'a', value: 'hi' } }),
+    );
     await tick(2);
-    channel.port2.postMessage(request({ requestId: 'req-2', method: 'storage.get', params: { key: 'a' } }));
+    channel.port2.postMessage(
+      request({ requestId: 'req-2', method: 'storage.get', params: { key: 'a' } }),
+    );
     await tick(2);
 
     expect(received).toHaveLength(2);
@@ -169,7 +177,12 @@ describe('createBridgeDispatcher', () => {
     // `hasOwn` alone would accept this; the typeof check is what rejects it.
     const handlers = { storage: { get: 'not a function' } } as unknown as BridgeHandlerRegistry;
 
-    createBridgeDispatcher({ manifest: makeManifest(['storage']), sandbox, port: channel.port1, handlers });
+    createBridgeDispatcher({
+      manifest: makeManifest(['storage']),
+      sandbox,
+      port: channel.port1,
+      handlers,
+    });
     channel.port2.postMessage(request());
     await tick(2);
 
@@ -190,8 +203,16 @@ describe('createBridgeDispatcher', () => {
 
   it.each([
     ['BridgePermissionDeniedError', new BridgePermissionDeniedError('denied'), 'PERMISSION_DENIED'],
-    ['a NETWORK_REQUEST_FAILED', new BridgeNetworkError('NETWORK_REQUEST_FAILED', 'failed'), 'NETWORK_REQUEST_FAILED'],
-    ['a NETWORK_TIMEOUT', new BridgeNetworkError('NETWORK_TIMEOUT', 'timed out'), 'NETWORK_TIMEOUT'],
+    [
+      'a NETWORK_REQUEST_FAILED',
+      new BridgeNetworkError('NETWORK_REQUEST_FAILED', 'failed'),
+      'NETWORK_REQUEST_FAILED',
+    ],
+    [
+      'a NETWORK_TIMEOUT',
+      new BridgeNetworkError('NETWORK_TIMEOUT', 'timed out'),
+      'NETWORK_TIMEOUT',
+    ],
     [
       'a NETWORK_RESPONSE_TOO_LARGE',
       new BridgeNetworkError('NETWORK_RESPONSE_TOO_LARGE', 'too large'),
@@ -209,8 +230,15 @@ describe('createBridgeDispatcher', () => {
       },
     };
 
-    createBridgeDispatcher({ manifest: makeManifest(['network']), sandbox, port: channel.port1, handlers });
-    channel.port2.postMessage(request({ method: 'network.fetch', params: { url: 'https://api.example.com/' } }));
+    createBridgeDispatcher({
+      manifest: makeManifest(['network']),
+      sandbox,
+      port: channel.port1,
+      handlers,
+    });
+    channel.port2.postMessage(
+      request({ method: 'network.fetch', params: { url: 'https://api.example.com/' } }),
+    );
     await tick(2);
 
     expect(received[0]).toMatchObject({ ok: false, error: { code: expectedCode } });
@@ -228,11 +256,21 @@ describe('createBridgeDispatcher', () => {
       },
     };
 
-    createBridgeDispatcher({ manifest: makeManifest(['network']), sandbox, port: channel.port1, handlers });
-    channel.port2.postMessage(request({ method: 'network.fetch', params: { url: 'https://api.example.com/' } }));
+    createBridgeDispatcher({
+      manifest: makeManifest(['network']),
+      sandbox,
+      port: channel.port1,
+      handlers,
+    });
+    channel.port2.postMessage(
+      request({ method: 'network.fetch', params: { url: 'https://api.example.com/' } }),
+    );
     await tick(2);
 
-    expect(received[0]).toMatchObject({ ok: false, error: { code: 'INTERNAL_ERROR', message: 'internal error' } });
+    expect(received[0]).toMatchObject({
+      ok: false,
+      error: { code: 'INTERNAL_ERROR', message: 'internal error' },
+    });
     expect(JSON.stringify(received[0])).not.toContain('hunter2');
   });
 
@@ -267,7 +305,10 @@ describe('createBridgeDispatcher', () => {
     let releaseFirst: (() => void) | undefined;
     const handlers: BridgeHandlerRegistry = {
       storage: {
-        get: () => new Promise((resolve) => { releaseFirst = () => resolve('ok'); }),
+        get: () =>
+          new Promise((resolve) => {
+            releaseFirst = () => resolve('ok');
+          }),
       },
     };
 
@@ -284,7 +325,11 @@ describe('createBridgeDispatcher', () => {
     await tick(2);
 
     expect(received).toHaveLength(1);
-    expect(received[0]).toMatchObject({ requestId: 'req-2', ok: false, error: { code: 'RATE_LIMITED' } });
+    expect(received[0]).toMatchObject({
+      requestId: 'req-2',
+      ok: false,
+      error: { code: 'RATE_LIMITED' },
+    });
 
     releaseFirst?.();
     await tick(2);
@@ -307,7 +352,12 @@ describe('createBridgeDispatcher', () => {
 
   describe('navigation.close closing sequence', () => {
     function closeRequest(overrides: Partial<Record<string, unknown>> = {}) {
-      return request({ method: 'navigation.close', params: undefined, requestId: 'close-1', ...overrides });
+      return request({
+        method: 'navigation.close',
+        params: undefined,
+        requestId: 'close-1',
+        ...overrides,
+      });
     }
 
     it('calls sandbox.destroy() only after a matching close-ack is received', async () => {
@@ -315,7 +365,11 @@ describe('createBridgeDispatcher', () => {
       const channel = new MessageChannel();
       const received = collectResponses(channel.port2);
 
-      createBridgeDispatcher({ manifest: makeManifest(['navigation']), sandbox, port: channel.port1 });
+      createBridgeDispatcher({
+        manifest: makeManifest(['navigation']),
+        sandbox,
+        port: channel.port1,
+      });
       channel.port2.postMessage(closeRequest());
       await tick(2);
 
@@ -339,12 +393,18 @@ describe('createBridgeDispatcher', () => {
       const channel = new MessageChannel();
       const received = collectResponses(channel.port2);
 
-      createBridgeDispatcher({ manifest: makeManifest(['navigation', 'storage']), sandbox, port: channel.port1 });
+      createBridgeDispatcher({
+        manifest: makeManifest(['navigation', 'storage']),
+        sandbox,
+        port: channel.port1,
+      });
       channel.port2.postMessage(closeRequest());
       await tick(2);
       expect(received).toHaveLength(1);
 
-      channel.port2.postMessage(request({ requestId: 'req-during-closing', method: 'storage.get' }));
+      channel.port2.postMessage(
+        request({ requestId: 'req-during-closing', method: 'storage.get' }),
+      );
       await tick(2);
 
       expect(received).toHaveLength(1); // no second response

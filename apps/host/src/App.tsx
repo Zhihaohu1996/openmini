@@ -1,4 +1,8 @@
-import { StaticFixtureResourceProvider, getRuntimeInfo, loadMiniAppFromUrl } from '@openmini/runtime';
+import {
+  StaticFixtureResourceProvider,
+  getRuntimeInfo,
+  loadMiniAppFromUrl,
+} from '@openmini/runtime';
 import type { MiniAppResourceProvider } from '@openmini/runtime';
 import { getSdkInfo } from '@openmini/sdk';
 import { Placeholder } from '@openmini/ui';
@@ -44,10 +48,15 @@ const SCENARIOS: readonly Scenario[] = [
 
 function readScenario(): Scenario {
   const value = new URLSearchParams(window.location.search).get('scenario');
-  return (SCENARIOS as readonly string[]).includes(value ?? '') ? (value as Scenario) : 'hello-sandbox';
+  return (SCENARIOS as readonly string[]).includes(value ?? '')
+    ? (value as Scenario)
+    : 'hello-sandbox';
 }
 
-function useScenarioDemo(scenario: Scenario): { manifestJson: string; provider: StaticFixtureResourceProvider | null } {
+function useScenarioDemo(scenario: Scenario): {
+  manifestJson: string;
+  provider: StaticFixtureResourceProvider | null;
+} {
   const [provider, setProvider] = useState<StaticFixtureResourceProvider | null>(null);
 
   useEffect(() => {
@@ -75,7 +84,10 @@ function useScenarioDemo(scenario: Scenario): { manifestJson: string; provider: 
 
   switch (scenario) {
     case 'invalid-manifest':
-      return { manifestJson: INVALID_MANIFEST_JSON, provider: new StaticFixtureResourceProvider({}) };
+      return {
+        manifestJson: INVALID_MANIFEST_JSON,
+        provider: new StaticFixtureResourceProvider({}),
+      };
     case 'self-navigate':
       return { manifestJson: SELF_NAVIGATE_MANIFEST_JSON, provider };
     case 'bridge-demo':

@@ -6,7 +6,11 @@ import {
   type NetworkFetchResponse,
 } from '@openmini/shared';
 import { BoundedFetchError, fetchBounded } from '../../http/boundedFetch';
-import { BridgeInvalidParamsError, BridgeNetworkError, BridgePermissionDeniedError } from '../errors';
+import {
+  BridgeInvalidParamsError,
+  BridgeNetworkError,
+  BridgePermissionDeniedError,
+} from '../errors';
 import type { BridgeHandlerContext, BridgeMethodHandler } from '../types';
 
 /** See docs/security/bridge.md's "network.fetch" section for the normative rules these implement. */
@@ -99,7 +103,11 @@ function readParams(params: unknown): NetworkFetchRequest {
 
   let headers: Record<string, string> | undefined;
   if (record.headers !== undefined) {
-    if (typeof record.headers !== 'object' || record.headers === null || Array.isArray(record.headers)) {
+    if (
+      typeof record.headers !== 'object' ||
+      record.headers === null ||
+      Array.isArray(record.headers)
+    ) {
       throw new BridgeInvalidParamsError('"headers" must be an object');
     }
     headers = {};
@@ -109,7 +117,9 @@ function readParams(params: unknown): NetworkFetchRequest {
       }
       const normalized = name.toLowerCase();
       if (isBlockedHeader(normalized)) {
-        throw new BridgeInvalidParamsError(`header "${name}" is controlled by the host and cannot be set`);
+        throw new BridgeInvalidParamsError(
+          `header "${name}" is controlled by the host and cannot be set`,
+        );
       }
       headers[normalized] = value;
     }
@@ -160,7 +170,11 @@ function assertHostAllowed(url: URL, ctx: BridgeHandlerContext): void {
   }
 }
 
-function resolveBody(method: NetworkFetchMethod, body: string | undefined, maxRequestBodyBytes: number): string | undefined {
+function resolveBody(
+  method: NetworkFetchMethod,
+  body: string | undefined,
+  maxRequestBodyBytes: number,
+): string | undefined {
   const hasBody = body !== undefined && body.length > 0;
 
   if (NETWORK_BODILESS_METHODS.includes(method)) {
@@ -202,7 +216,10 @@ function toBridgeNetworkError(
 ): BridgeNetworkError {
   switch (error.reason) {
     case 'timeout':
-      return new BridgeNetworkError('NETWORK_TIMEOUT', `request exceeded the ${timeoutMs}ms timeout`);
+      return new BridgeNetworkError(
+        'NETWORK_TIMEOUT',
+        `request exceeded the ${timeoutMs}ms timeout`,
+      );
     case 'too-large':
       return new BridgeNetworkError(
         'NETWORK_RESPONSE_TOO_LARGE',
@@ -226,7 +243,9 @@ function toBridgeNetworkError(
  * Note this grants permission to *attempt* a request; it is not a CORS
  * bypass. A cross-origin target still has to allow the host's origin.
  */
-export function createNetworkHandlers(options: NetworkHandlerOptions = {}): Record<string, BridgeMethodHandler> {
+export function createNetworkHandlers(
+  options: NetworkHandlerOptions = {},
+): Record<string, BridgeMethodHandler> {
   const {
     allowInsecureLoopback = false,
     timeoutMs = NETWORK_REQUEST_TIMEOUT_MS,

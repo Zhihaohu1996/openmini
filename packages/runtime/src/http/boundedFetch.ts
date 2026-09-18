@@ -83,7 +83,10 @@ export async function readBoundedBody(
     const text = await response.text();
     if (byteLength(text) > maxBodyBytes) {
       onOverflow();
-      throw new BoundedFetchError('too-large', `response body exceeds the ${maxBodyBytes}-byte limit`);
+      throw new BoundedFetchError(
+        'too-large',
+        `response body exceeds the ${maxBodyBytes}-byte limit`,
+      );
     }
     return text;
   }
@@ -102,7 +105,10 @@ export async function readBoundedBody(
     if (received > maxBodyBytes) {
       onOverflow();
       await reader.cancel().catch(() => undefined);
-      throw new BoundedFetchError('too-large', `response body exceeds the ${maxBodyBytes}-byte limit`);
+      throw new BoundedFetchError(
+        'too-large',
+        `response body exceeds the ${maxBodyBytes}-byte limit`,
+      );
     }
     text += decoder.decode(value, { stream: true });
   }

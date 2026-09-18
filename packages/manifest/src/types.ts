@@ -46,5 +46,4 @@ export interface ManifestIssue {
 }
 
 export type ManifestValidationResult =
-  | { valid: true; manifest: OpenMiniManifest }
-  | { valid: false; issues: ManifestIssue[] };
+  { valid: true; manifest: OpenMiniManifest } | { valid: false; issues: ManifestIssue[] };

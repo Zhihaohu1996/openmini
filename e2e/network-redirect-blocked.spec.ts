@@ -1,8 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 type NetworkAttempt =
-  | { ok: true; status: number; body: string }
-  | { ok: false; code: string; message: string };
+  { ok: true; status: number; body: string } | { ok: false; code: string; message: string };
 
 type NetworkHooksWindow = {
   __bridgeDemo: { networkFetch(url: string): Promise<NetworkAttempt> };
@@ -30,13 +29,17 @@ test('a redirect is never followed, and is reported only as a generic network fa
   await page.getByRole('button', { name: 'Load', exact: true }).click();
 
   const frame = page.frameLocator('[data-testid="miniapp-container"] iframe');
-  await expect(frame.locator('#storage-result')).toHaveText('hello from bridge', { timeout: 10_000 });
+  await expect(frame.locator('#storage-result')).toHaveText('hello from bridge', {
+    timeout: 10_000,
+  });
 
-  const attempt = await frame.locator('body').evaluate(() =>
-    (window as unknown as NetworkHooksWindow).__bridgeDemo.networkFetch(
-      'http://localhost:5173/test-api/redirect',
-    ),
-  );
+  const attempt = await frame
+    .locator('body')
+    .evaluate(() =>
+      (window as unknown as NetworkHooksWindow).__bridgeDemo.networkFetch(
+        'http://localhost:5173/test-api/redirect',
+      ),
+    );
 
   // (ii) The host reports what it can actually know — no more.
   expect(attempt).toMatchObject({ ok: false, code: 'NETWORK_REQUEST_FAILED' });
@@ -48,17 +51,24 @@ test('a redirect is never followed, and is reported only as a generic network fa
   // process-wide and specs run in parallel, so this asserts the redirect was
   // genuinely attempted rather than an exact count — while /secret stays an
   // absolute check: no spec in the suite may ever cause it to be reached.
-  const hits = (await (await request.get('http://localhost:5173/test-api/hits')).json()) as Record<string, number>;
+  const hits = (await (await request.get('http://localhost:5173/test-api/hits')).json()) as Record<
+    string,
+    number
+  >;
   expect(hits['/redirect']).toBeGreaterThanOrEqual(1);
   expect(hits['/secret']).toBeUndefined();
 });
 
-test('a CORS-rejected request is reported with the same code as a blocked redirect', async ({ page }) => {
+test('a CORS-rejected request is reported with the same code as a blocked redirect', async ({
+  page,
+}) => {
   await page.goto('/?scenario=bridge-demo-network');
   await page.getByRole('button', { name: 'Load', exact: true }).click();
 
   const frame = page.frameLocator('[data-testid="miniapp-container"] iframe');
-  await expect(frame.locator('#storage-result')).toHaveText('hello from bridge', { timeout: 10_000 });
+  await expect(frame.locator('#storage-result')).toHaveText('hello from bridge', {
+    timeout: 10_000,
+  });
 
   // Port 5174 is a different origin from the :5173 host page, so this is a
   // real cross-origin request; the endpoint deliberately omits CORS headers.

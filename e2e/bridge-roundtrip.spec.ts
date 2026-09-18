@@ -5,6 +5,8 @@ test('storage.set/get and user.getProfile round-trip through the real bridge', a
   await page.getByRole('button', { name: 'Load', exact: true }).click();
 
   const frame = page.frameLocator('[data-testid="miniapp-container"] iframe');
-  await expect(frame.locator('#storage-result')).toHaveText('hello from bridge', { timeout: 10_000 });
+  await expect(frame.locator('#storage-result')).toHaveText('hello from bridge', {
+    timeout: 10_000,
+  });
   await expect(frame.locator('#user-result')).toHaveText('{"id":null,"displayName":null}');
 });

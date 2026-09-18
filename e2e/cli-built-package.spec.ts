@@ -12,9 +12,7 @@ import { expect, test } from '@playwright/test';
 test('a CLI-built package boots and its hashed inline styles are applied', async ({ page }) => {
   await page.goto('/');
 
-  await page
-    .getByLabel('Mini App package URL')
-    .fill('http://localhost:5173/miniapps/hello-styled');
+  await page.getByLabel('Mini App package URL').fill('http://localhost:5173/miniapps/hello-styled');
   await page.getByRole('button', { name: 'Load by URL' }).click();
 
   const remoteHost = page.getByTestId('remote-miniapp-host');
@@ -48,7 +46,10 @@ test('a CLI-built package serves both loader files, with a single builder-genera
 }) => {
   const manifest = await request.get('http://localhost:5173/miniapps/hello-styled/openmini.json');
   expect(manifest.status()).toBe(200);
-  expect(await manifest.json()).toMatchObject({ id: 'com.openmini.hello-styled', entry: 'index.html' });
+  expect(await manifest.json()).toMatchObject({
+    id: 'com.openmini.hello-styled',
+    entry: 'index.html',
+  });
 
   const entry = await request.get('http://localhost:5173/miniapps/hello-styled/index.html');
   expect(entry.status()).toBe(200);

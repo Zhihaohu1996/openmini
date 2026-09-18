@@ -2,29 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { resolveContainedPath } from './containment';
 
 describe('resolveContainedPath', () => {
-  it.each([
-    ['index.html'],
-    ['assets/icon.png'],
-    ['a/b/c.html'],
-    ['./index.html'],
-    ['a/./b.html'],
-  ])('accepts valid relative path %s', (input) => {
-    const result = resolveContainedPath(input);
-    expect(result.ok).toBe(true);
-  });
+  it.each([['index.html'], ['assets/icon.png'], ['a/b/c.html'], ['./index.html'], ['a/./b.html']])(
+    'accepts valid relative path %s',
+    (input) => {
+      const result = resolveContainedPath(input);
+      expect(result.ok).toBe(true);
+    },
+  );
 
-  it.each([
-    ['../secret.html'],
-    ['a/../../b.html'],
-    ['%2e%2e/secret.html'],
-    ['a/%2e%2e/b.html'],
-  ])('rejects traversal in %s', (input) => {
-    const result = resolveContainedPath(input);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toBe('TRAVERSAL');
-    }
-  });
+  it.each([['../secret.html'], ['a/../../b.html'], ['%2e%2e/secret.html'], ['a/%2e%2e/b.html']])(
+    'rejects traversal in %s',
+    (input) => {
+      const result = resolveContainedPath(input);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toBe('TRAVERSAL');
+      }
+    },
+  );
 
   it('rejects double-encoded traversal', () => {
     const result = resolveContainedPath('%252e%252e/secret.html');
@@ -34,16 +29,19 @@ describe('resolveContainedPath', () => {
     }
   });
 
-  it.each([['/index.html'], ['\\index.html'], ['C:\\Windows\\x'], ['C:/Windows/x'], ['\\\\host\\share']])(
-    'rejects absolute path %s',
-    (input) => {
-      const result = resolveContainedPath(input);
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.reason).toBe('ABSOLUTE_PATH');
-      }
-    },
-  );
+  it.each([
+    ['/index.html'],
+    ['\\index.html'],
+    ['C:\\Windows\\x'],
+    ['C:/Windows/x'],
+    ['\\\\host\\share'],
+  ])('rejects absolute path %s', (input) => {
+    const result = resolveContainedPath(input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('ABSOLUTE_PATH');
+    }
+  });
 
   it.each([
     ['https://example.com'],
@@ -60,16 +58,13 @@ describe('resolveContainedPath', () => {
     // The accepted cost of matching a bare scheme: a colon anywhere in the
     // first segment is now rejected. Such names are unusable on Windows.
     ['my:file.html'],
-  ])(
-    'rejects URL-like entry %s',
-    (input) => {
-      const result = resolveContainedPath(input);
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.reason).toBe('SCHEME_LIKE');
-      }
-    },
-  );
+  ])('rejects URL-like entry %s', (input) => {
+    const result = resolveContainedPath(input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('SCHEME_LIKE');
+    }
+  });
 
   it.each([[''], ['   '], ['.'], ['./']])('rejects empty-equivalent input %s', (input) => {
     const result = resolveContainedPath(input);

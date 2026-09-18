@@ -74,25 +74,33 @@ describe('isBridgeResponseEnvelope', () => {
   });
 
   it('rejects an error response with an unknown error code', () => {
-    expect(isBridgeResponseEnvelope({ ...failure, error: { code: 'NOT_A_REAL_CODE', message: 'x' } })).toBe(false);
+    expect(
+      isBridgeResponseEnvelope({ ...failure, error: { code: 'NOT_A_REAL_CODE', message: 'x' } }),
+    ).toBe(false);
   });
 
   it('accepts STORAGE_QUOTA_EXCEEDED as a valid error code', () => {
-    expect(isBridgeResponseEnvelope({ ...failure, error: { code: 'STORAGE_QUOTA_EXCEEDED', message: 'over quota' } })).toBe(
-      true,
-    );
+    expect(
+      isBridgeResponseEnvelope({
+        ...failure,
+        error: { code: 'STORAGE_QUOTA_EXCEEDED', message: 'over quota' },
+      }),
+    ).toBe(true);
   });
 
   it('rejects a success response missing the result field entirely', () => {
     expect(isBridgeResponseEnvelope(omit(success, 'result'))).toBe(false);
   });
 
-  it.each([[{ ...success, sessionId: '' }], [{ ...success, requestId: '' }], [{ ...success, type: 'request' }], [null], [{}]])(
-    'rejects malformed value %#',
-    (value) => {
-      expect(isBridgeResponseEnvelope(value)).toBe(false);
-    },
-  );
+  it.each([
+    [{ ...success, sessionId: '' }],
+    [{ ...success, requestId: '' }],
+    [{ ...success, type: 'request' }],
+    [null],
+    [{}],
+  ])('rejects malformed value %#', (value) => {
+    expect(isBridgeResponseEnvelope(value)).toBe(false);
+  });
 });
 
 describe('isBridgeCloseAckEnvelope', () => {

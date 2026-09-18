@@ -1,6 +1,10 @@
 import { OPENMINI_BRIDGE_CHANNEL, OPENMINI_BRIDGE_VERSION } from '@openmini/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_CONNECT_TIMEOUT_MS, initOpenMiniBridge, type BridgeConnectTarget } from './connect';
+import {
+  DEFAULT_CONNECT_TIMEOUT_MS,
+  initOpenMiniBridge,
+  type BridgeConnectTarget,
+} from './connect';
 import { BridgeError } from './errors';
 
 function createFakeTarget(parent: unknown) {

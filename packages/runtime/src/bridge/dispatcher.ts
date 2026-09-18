@@ -149,7 +149,11 @@ export function createBridgeDispatcher(options: BridgeDispatcherOptions): Bridge
     }
 
     if (data.sessionId !== sandbox.sessionId) {
-      postError(data.requestId, 'SESSION_INVALID', 'session id does not match this sandbox instance');
+      postError(
+        data.requestId,
+        'SESSION_INVALID',
+        'session id does not match this sandbox instance',
+      );
       return;
     }
 
@@ -157,11 +161,19 @@ export function createBridgeDispatcher(options: BridgeDispatcherOptions): Bridge
     if (!isNamespaceKnown(namespace)) {
       // Unknown namespace: same response as a denied permission, so an
       // unpermitted/nonexistent namespace can't be distinguished by a caller.
-      postError(data.requestId, 'PERMISSION_DENIED', 'this Mini App does not have the required permission');
+      postError(
+        data.requestId,
+        'PERMISSION_DENIED',
+        'this Mini App does not have the required permission',
+      );
       return;
     }
     if (!permittedNamespaces.has(namespace)) {
-      postError(data.requestId, 'PERMISSION_DENIED', 'this Mini App does not have the required permission');
+      postError(
+        data.requestId,
+        'PERMISSION_DENIED',
+        'this Mini App does not have the required permission',
+      );
       return;
     }
 

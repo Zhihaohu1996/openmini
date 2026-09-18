@@ -25,7 +25,9 @@ describe('gateManifest', () => {
   });
 
   it('halts (ok: false) for an unsupported schemaVersion', () => {
-    const result = gateManifest(JSON.stringify({ ...JSON.parse(validManifestJson), schemaVersion: 2 }));
+    const result = gateManifest(
+      JSON.stringify({ ...JSON.parse(validManifestJson), schemaVersion: 2 }),
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toMatch(/schemaVersion/i);

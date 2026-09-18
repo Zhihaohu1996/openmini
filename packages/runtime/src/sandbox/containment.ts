@@ -1,13 +1,8 @@
 export type ContainmentFailureReason =
-  | 'EMPTY'
-  | 'ABSOLUTE_PATH'
-  | 'SCHEME_LIKE'
-  | 'TRAVERSAL'
-  | 'INVALID_SEGMENT';
+  'EMPTY' | 'ABSOLUTE_PATH' | 'SCHEME_LIKE' | 'TRAVERSAL' | 'INVALID_SEGMENT';
 
 export type ContainmentResult =
-  | { ok: true; segments: string[] }
-  | { ok: false; reason: ContainmentFailureReason };
+  { ok: true; segments: string[] } | { ok: false; reason: ContainmentFailureReason };
 
 // Windows drive-letter/UNC forms, checked before the generic scheme check so
 // "C:\x" is reported as ABSOLUTE_PATH rather than (also correctly, but less

@@ -123,7 +123,11 @@ export function isBridgeResponseEnvelope(value: unknown): value is BridgeRespons
   if (!isEnvelopeBase(value)) {
     return false;
   }
-  if (value.type !== 'response' || typeof value.requestId !== 'string' || value.requestId.length === 0) {
+  if (
+    value.type !== 'response' ||
+    typeof value.requestId !== 'string' ||
+    value.requestId.length === 0
+  ) {
     return false;
   }
   if (value.ok === true) {
@@ -146,5 +150,7 @@ export function isBridgeCloseAckEnvelope(value: unknown): value is BridgeCloseAc
   if (!isEnvelopeBase(value)) {
     return false;
   }
-  return value.type === 'close-ack' && typeof value.requestId === 'string' && value.requestId.length > 0;
+  return (
+    value.type === 'close-ack' && typeof value.requestId === 'string' && value.requestId.length > 0
+  );
 }

@@ -40,10 +40,16 @@ describe('loadMiniAppFromUrl', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.manifestJson).toBe(MANIFEST_JSON);
-    expect(fetchedUrl(fetchMock, 0)).toBe('http://localhost:5173/miniapps/hello-remote/openmini.json');
+    expect(fetchedUrl(fetchMock, 0)).toBe(
+      'http://localhost:5173/miniapps/hello-remote/openmini.json',
+    );
 
     fetchMock.mockClear();
-    fetchMock.mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve('<h1>hi</h1>') });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve('<h1>hi</h1>'),
+    });
     await result.provider.readText('index.html');
     expect(fetchedUrl(fetchMock, 0)).toBe('http://localhost:5173/miniapps/hello-remote/index.html');
   });
@@ -73,9 +79,11 @@ describe('loadMiniAppFromUrl', () => {
   });
 
   it('returns ok:false for a 404 without throwing', async () => {
-    global.fetch = vi
-      .fn()
-      .mockResolvedValue({ ok: false, status: 404, text: () => Promise.resolve('') }) as unknown as typeof fetch;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve(''),
+    }) as unknown as typeof fetch;
 
     const result = await loadMiniAppFromUrl('http://localhost:5173/miniapps/missing');
     expect(result).toEqual({ ok: false, reason: 'manifest fetch failed (404)' });
@@ -131,9 +139,9 @@ describe('loadMiniAppFromUrl', () => {
       const result = await loadMiniAppFromUrl('http://localhost:5173/miniapps/hello-remote');
 
       expect(result).toEqual({ ok: false, reason: 'failed to fetch manifest' });
-      expect((fetchMock.mock.calls[0] as unknown as [unknown, { redirect: string }])[1].redirect).toBe(
-        'error',
-      );
+      expect(
+        (fetchMock.mock.calls[0] as unknown as [unknown, { redirect: string }])[1].redirect,
+      ).toBe('error');
     });
 
     it('fails mid-stream on an oversized body, never accumulating the whole of it', async () => {

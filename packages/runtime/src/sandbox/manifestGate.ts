@@ -1,7 +1,8 @@
 import { formatManifestIssues, parseManifest } from '@openmini/manifest';
 import type { OpenMiniManifest } from '@openmini/manifest';
 
-export type ManifestGateResult = { ok: true; manifest: OpenMiniManifest } | { ok: false; reason: string };
+export type ManifestGateResult =
+  { ok: true; manifest: OpenMiniManifest } | { ok: false; reason: string };
 
 /**
  * Validates raw manifest JSON before any sandbox is created. This is a thin

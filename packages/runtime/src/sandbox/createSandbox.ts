@@ -1,5 +1,10 @@
 import { MINI_APP_SANDBOX_ATTRIBUTE } from '@openmini/shared';
-import { OPENMINI_MESSAGE_CHANNEL, OPENMINI_PROTOCOL_VERSION, generateSessionId, isValidHandshakeAck } from './messaging';
+import {
+  OPENMINI_MESSAGE_CHANNEL,
+  OPENMINI_PROTOCOL_VERSION,
+  generateSessionId,
+  isValidHandshakeAck,
+} from './messaging';
 import { resolveEntryDocument } from './resourceProvider';
 import type {
   MiniAppSandbox,
@@ -80,7 +85,10 @@ class MiniAppSandboxImpl implements MiniAppSandbox {
 
     let entryHtml: string;
     try {
-      const resolved = await resolveEntryDocument(this.options.manifest, this.options.resourceProvider);
+      const resolved = await resolveEntryDocument(
+        this.options.manifest,
+        this.options.resourceProvider,
+      );
       if (this.destroyed) {
         return;
       }

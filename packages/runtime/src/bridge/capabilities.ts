@@ -20,7 +20,9 @@ const PERMISSION_TO_NAMESPACE: Record<string, BridgeNamespace> = {
  * never mutated afterward. A namespace absent from this set must never be
  * reachable, regardless of whether the exact method name is real.
  */
-export function computePermittedNamespaces(manifest: OpenMiniManifest): ReadonlySet<BridgeNamespace> {
+export function computePermittedNamespaces(
+  manifest: OpenMiniManifest,
+): ReadonlySet<BridgeNamespace> {
   const permitted = new Set<BridgeNamespace>();
   for (const permission of manifest.permissions) {
     // `manifest.permissions` is constrained to the four known values upstream,

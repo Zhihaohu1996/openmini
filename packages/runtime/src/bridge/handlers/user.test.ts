@@ -4,6 +4,9 @@ import { createUserHandlers } from './user';
 describe('createUserHandlers', () => {
   it('returns a static stub profile', () => {
     const handlers = createUserHandlers();
-    expect(handlers.getProfile?.(undefined, { sandbox: {}, manifest: {} } as never)).toEqual({ id: null, displayName: null });
+    expect(handlers.getProfile?.(undefined, { sandbox: {}, manifest: {} } as never)).toEqual({
+      id: null,
+      displayName: null,
+    });
   });
 });

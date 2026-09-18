@@ -51,9 +51,7 @@ export function validateManifest(input: unknown): ManifestValidationResult {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
     return {
       valid: false,
-      issues: [
-        { path: '', code: 'INVALID_ROOT_TYPE', message: 'manifest must be a JSON object' },
-      ],
+      issues: [{ path: '', code: 'INVALID_ROOT_TYPE', message: 'manifest must be a JSON object' }],
     };
   }
 

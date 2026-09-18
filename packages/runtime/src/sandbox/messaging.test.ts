@@ -68,7 +68,11 @@ describe('isValidHandshakeInitEvent', () => {
   });
 
   it('rejects a handshake-ack presented as an init', () => {
-    const event = { source: parentWindow, data: { ...validInit, type: 'handshake-ack' }, ports: onePort };
+    const event = {
+      source: parentWindow,
+      data: { ...validInit, type: 'handshake-ack' },
+      ports: onePort,
+    };
     expect(isValidHandshakeInitEvent(event, parentWindow)).toBe(false);
   });
 });

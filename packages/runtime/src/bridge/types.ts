@@ -6,7 +6,10 @@ export interface BridgeHandlerContext {
   readonly manifest: OpenMiniManifest;
 }
 
-export type BridgeMethodHandler = (params: unknown, ctx: BridgeHandlerContext) => unknown | Promise<unknown>;
+export type BridgeMethodHandler = (
+  params: unknown,
+  ctx: BridgeHandlerContext,
+) => unknown | Promise<unknown>;
 
 /** namespace -> methodName -> handler. */
 export type BridgeHandlerRegistry = Record<string, Record<string, BridgeMethodHandler> | undefined>;

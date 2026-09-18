@@ -1,4 +1,8 @@
-import { OPENMINI_BRIDGE_CHANNEL, OPENMINI_BRIDGE_VERSION, generateRandomId } from '@openmini/shared';
+import {
+  OPENMINI_BRIDGE_CHANNEL,
+  OPENMINI_BRIDGE_VERSION,
+  generateRandomId,
+} from '@openmini/shared';
 
 /**
  * Minimal, versioned envelope for the one-time MessageChannel bootstrap
@@ -82,6 +86,13 @@ export function isValidHandshakeInitEvent(
  * `sessionId` matches the session the host is currently tracking (a stale
  * or foreign session id is rejected, not just a malformed shape).
  */
-export function isValidHandshakeAck(data: unknown, expectedSessionId: string): data is OpenMiniEnvelope {
-  return isOpenMiniEnvelope(data) && data.type === 'handshake-ack' && data.sessionId === expectedSessionId;
+export function isValidHandshakeAck(
+  data: unknown,
+  expectedSessionId: string,
+): data is OpenMiniEnvelope {
+  return (
+    isOpenMiniEnvelope(data) &&
+    data.type === 'handshake-ack' &&
+    data.sessionId === expectedSessionId
+  );
 }

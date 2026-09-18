@@ -74,7 +74,10 @@ describe('validateManifest — network declaration', () => {
   });
 
   it('rejects a declaration without the network permission', () => {
-    const result = validateManifest({ ...VALID_MANIFEST, network: { domains: ['api.example.com'] } });
+    const result = validateManifest({
+      ...VALID_MANIFEST,
+      network: { domains: ['api.example.com'] },
+    });
     expect(result.valid).toBe(false);
     if (!result.valid) {
       expect(result.issues).toContainEqual(
@@ -134,9 +137,7 @@ describe('validateManifest — unsupported schemaVersion', () => {
     const result = validateManifest({ ...VALID_MANIFEST, schemaVersion: value });
     expect(result.valid).toBe(false);
     if (!result.valid) {
-      expect(result.issues).toEqual([
-        expect.objectContaining({ path: 'schemaVersion' }),
-      ]);
+      expect(result.issues).toEqual([expect.objectContaining({ path: 'schemaVersion' })]);
     }
   });
 });

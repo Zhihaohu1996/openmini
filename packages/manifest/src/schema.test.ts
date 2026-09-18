@@ -32,7 +32,11 @@ const fixtures: Array<{ name: string; manifest: unknown; expectValid: boolean }>
     },
     expectValid: true,
   },
-  { name: 'empty permissions', manifest: { ...VALID_MANIFEST, permissions: [] }, expectValid: true },
+  {
+    name: 'empty permissions',
+    manifest: { ...VALID_MANIFEST, permissions: [] },
+    expectValid: true,
+  },
   {
     name: 'unsupported schemaVersion',
     manifest: { ...VALID_MANIFEST, schemaVersion: 2 },

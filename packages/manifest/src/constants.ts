@@ -11,7 +11,8 @@ export const MANIFEST_PERMISSIONS = ['storage', 'navigation', 'user', 'network']
  * `::1`). Accepting any other spelling here would produce an entry that can
  * never match anything, i.e. a permission that silently grants nothing.
  */
-export const NETWORK_DOMAIN_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
+export const NETWORK_DOMAIN_PATTERN =
+  /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
 export const NETWORK_DOMAIN_IPV6_PATTERN = /^\[[0-9a-f:]+\]$/;
 
 export const MAX_NAME_LENGTH = 100;

@@ -55,7 +55,7 @@ export const MINI_APP_BASE_CSP_DIRECTIVES: Readonly<Record<string, string>> = Ob
   'script-src-attr': "'none'",
 });
 
-const FORBIDDEN_CSP_SOURCE_SUBSTRINGS = ["unsafe-inline", "unsafe-eval", "'self'", 'https:'];
+const FORBIDDEN_CSP_SOURCE_SUBSTRINGS = ['unsafe-inline', 'unsafe-eval', "'self'", 'https:'];
 const SHA256_SOURCE_PATTERN = /^sha256-[A-Za-z0-9+/]+=*$/;
 
 function assertHashSource(source: string, directive: string): void {

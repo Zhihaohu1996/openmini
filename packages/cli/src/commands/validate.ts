@@ -30,7 +30,10 @@ export async function validatePackage(target: string): Promise<ValidateResult> {
 
   const result = parseManifest(raw);
   if (result.valid) {
-    return { ok: true, report: `${path}: valid (${result.manifest.id} ${result.manifest.version})` };
+    return {
+      ok: true,
+      report: `${path}: valid (${result.manifest.id} ${result.manifest.version})`,
+    };
   }
 
   return { ok: false, report: `${path}:\n${formatManifestIssues(result.issues)}` };

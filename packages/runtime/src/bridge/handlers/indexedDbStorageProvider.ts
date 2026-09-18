@@ -53,14 +53,21 @@ function openDatabase(dbName: string): Promise<IDBDatabase> {
  * (e.g. a non-browser host embedding), rather than silently falling back to
  * a different backend.
  */
-export function createIndexedDbStorageProvider(dbName: string = DEFAULT_DB_NAME): MiniAppStorageProvider {
+export function createIndexedDbStorageProvider(
+  dbName: string = DEFAULT_DB_NAME,
+): MiniAppStorageProvider {
   if (typeof indexedDB === 'undefined') {
-    throw new Error('createIndexedDbStorageProvider requires a browser environment with IndexedDB support');
+    throw new Error(
+      'createIndexedDbStorageProvider requires a browser environment with IndexedDB support',
+    );
   }
 
   const dbPromise = openDatabase(dbName);
 
-  async function withStore<T>(mode: 'readonly' | 'readwrite', run: (store: IDBObjectStore) => Promise<T>): Promise<T> {
+  async function withStore<T>(
+    mode: 'readonly' | 'readwrite',
+    run: (store: IDBObjectStore) => Promise<T>,
+  ): Promise<T> {
     const db = await dbPromise;
     const transaction = db.transaction(STORE_NAME, mode);
     const store = transaction.objectStore(STORE_NAME);
@@ -69,11 +76,15 @@ export function createIndexedDbStorageProvider(dbName: string = DEFAULT_DB_NAME)
 
   return {
     async get(appId, key) {
-      const entry = await withStore('readonly', (store) => promisifyRequest(store.get([appId, key]) as IDBRequest<StoredEntry | undefined>));
+      const entry = await withStore('readonly', (store) =>
+        promisifyRequest(store.get([appId, key]) as IDBRequest<StoredEntry | undefined>),
+      );
       return entry?.value ?? null;
     },
     async set(appId, key, value) {
-      await withStore('readwrite', (store) => promisifyRequest(store.put({ appId, key, value } satisfies StoredEntry)));
+      await withStore('readwrite', (store) =>
+        promisifyRequest(store.put({ appId, key, value } satisfies StoredEntry)),
+      );
     },
     async getUsedBytes(appId) {
       const entries = await withStore('readonly', (store) => {

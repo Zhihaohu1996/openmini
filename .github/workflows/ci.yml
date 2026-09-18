@@ -28,6 +28,7 @@ jobs:
       # in seconds rather than after a full run.
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - run: pnpm format:check
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test

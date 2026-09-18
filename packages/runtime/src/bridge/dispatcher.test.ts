@@ -128,6 +128,54 @@ describe('createBridgeDispatcher', () => {
     expect(received[0]).toMatchObject({ ok: false, error: { code: 'UNKNOWN_METHOD' } });
   });
 
+  // R3 (Phase 8.5). The handler registry is a plain object, so before the
+  // own-property guard every member of Object.prototype was reachable as a
+  // bridge method within a permitted namespace: `storage.constructor`
+  // resolved to `Object` and was invoked, and its return value was posted
+  // back as a successful result. The registry must be closed — the set of
+  // callable methods is exactly the set of own function properties.
+  it.each([
+    'constructor',
+    'toString',
+    'valueOf',
+    'hasOwnProperty',
+    'isPrototypeOf',
+    'propertyIsEnumerable',
+    'toLocaleString',
+    '__proto__',
+    '__defineGetter__',
+    '__defineSetter__',
+    '__lookupGetter__',
+    '__lookupSetter__',
+  ])('rejects the inherited Object.prototype member %j as UNKNOWN_METHOD', async (member) => {
+    const { sandbox } = createFakeSandbox();
+    const channel = new MessageChannel();
+    const received = collectResponses(channel.port2);
+
+    // Default handlers and a permitted namespace: the shipping configuration,
+    // so this is not an artefact of a test-only registry.
+    createBridgeDispatcher({ manifest: makeManifest(['storage']), sandbox, port: channel.port1 });
+    channel.port2.postMessage(request({ method: `storage.${member}`, params: undefined }));
+    await tick(2);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ ok: false, error: { code: 'UNKNOWN_METHOD' } });
+  });
+
+  it('rejects an own registry property that is not callable', async () => {
+    const { sandbox } = createFakeSandbox();
+    const channel = new MessageChannel();
+    const received = collectResponses(channel.port2);
+    // `hasOwn` alone would accept this; the typeof check is what rejects it.
+    const handlers = { storage: { get: 'not a function' } } as unknown as BridgeHandlerRegistry;
+
+    createBridgeDispatcher({ manifest: makeManifest(['storage']), sandbox, port: channel.port1, handlers });
+    channel.port2.postMessage(request());
+    await tick(2);
+
+    expect(received[0]).toMatchObject({ ok: false, error: { code: 'UNKNOWN_METHOD' } });
+  });
+
   it('rejects malformed params with INVALID_PARAMS', async () => {
     const { sandbox } = createFakeSandbox();
     const channel = new MessageChannel();

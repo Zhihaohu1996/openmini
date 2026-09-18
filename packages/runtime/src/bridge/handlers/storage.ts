@@ -47,16 +47,21 @@ export function createStorageHandlers(options: StorageHandlerOptions = {}): Reco
     maxTotalBytesPerApp = DEFAULT_MAX_TOTAL_BYTES_PER_APP,
   } = options;
 
-  function checkKeyBytes(key: string): void {
-    if (byteLength(key) > maxKeyBytes) {
-      throw new BridgeStorageQuotaExceededError(`key exceeds the ${maxKeyBytes}-byte limit`);
-    }
+  function keyExceedsLimit(key: string): boolean {
+    return byteLength(key) > maxKeyBytes;
   }
 
   return {
     async get(params, ctx: BridgeHandlerContext): Promise<string | null> {
       const key = readKey(params);
-      checkKeyBytes(key);
+      // R6 (Phase 8.5): a read consumes no quota, so an over-long key here is
+      // a malformed argument, not a quota failure — the same class of problem
+      // as the other checks in `readKey`. Reporting STORAGE_QUOTA_EXCEEDED
+      // made a read announce a write-side failure mode, and contradicted
+      // docs/security/bridge.md, which lists quota errors for `set` only.
+      if (keyExceedsLimit(key)) {
+        throw new BridgeInvalidParamsError(`"key" exceeds the ${maxKeyBytes}-byte limit`);
+      }
       return provider.get(ctx.manifest.id, key);
     },
     async set(params, ctx: BridgeHandlerContext): Promise<undefined> {
@@ -69,7 +74,11 @@ export function createStorageHandlers(options: StorageHandlerOptions = {}): Reco
         throw new BridgeInvalidParamsError('"value" must be a string');
       }
 
-      checkKeyBytes(key);
+      // `set` does consume quota, so the same over-long key stays a quota
+      // error here. The asymmetry with `get` above is the point of R6.
+      if (keyExceedsLimit(key)) {
+        throw new BridgeStorageQuotaExceededError(`key exceeds the ${maxKeyBytes}-byte limit`);
+      }
       const valueBytes = byteLength(value);
       if (valueBytes > maxValueBytes) {
         throw new BridgeStorageQuotaExceededError(`value exceeds the ${maxValueBytes}-byte limit`);

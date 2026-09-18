@@ -166,8 +166,19 @@ export function createBridgeDispatcher(options: BridgeDispatcherOptions): Bridge
     }
 
     const methodName = data.method.slice(namespace.length + 1);
-    const handler = handlers[namespace]?.[methodName];
-    if (!handler) {
+    // The registry is a plain object, so a bare index lookup also reaches
+    // everything on Object.prototype: `storage.constructor`,
+    // `storage.toString` and friends would all resolve to callable values and
+    // be invoked as bridge methods. The registry must be *closed* — only own,
+    // callable properties are methods. `hasOwn` alone is not enough (an own
+    // non-function would still pass) and the typeof check alone is not enough
+    // (inherited functions would still pass), so both are required.
+    const namespaceHandlers = handlers[namespace];
+    const handler =
+      namespaceHandlers !== undefined && Object.hasOwn(namespaceHandlers, methodName)
+        ? namespaceHandlers[methodName]
+        : undefined;
+    if (typeof handler !== 'function') {
       postError(data.requestId, 'UNKNOWN_METHOD', `unknown method: ${data.method}`);
       return;
     }

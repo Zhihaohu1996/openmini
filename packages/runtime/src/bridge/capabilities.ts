@@ -23,6 +23,14 @@ const PERMISSION_TO_NAMESPACE: Record<string, BridgeNamespace> = {
 export function computePermittedNamespaces(manifest: OpenMiniManifest): ReadonlySet<BridgeNamespace> {
   const permitted = new Set<BridgeNamespace>();
   for (const permission of manifest.permissions) {
+    // `manifest.permissions` is constrained to the four known values upstream,
+    // so an inherited-property hit is not reachable today. The own-property
+    // guard is free defence-in-depth against that constraint being relaxed:
+    // without it, a permission named `constructor` would map to a truthy
+    // non-namespace and be added to the permitted set.
+    if (!Object.hasOwn(PERMISSION_TO_NAMESPACE, permission)) {
+      continue;
+    }
     const namespace = PERMISSION_TO_NAMESPACE[permission];
     if (namespace) {
       permitted.add(namespace);

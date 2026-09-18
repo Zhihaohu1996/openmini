@@ -25,6 +25,19 @@ describe('computePermittedNamespaces', () => {
     const permitted = computePermittedNamespaces(makeManifest([]));
     expect(permitted.size).toBe(0);
   });
+
+  // R3 defence-in-depth (Phase 8.5). Not reachable through a validated
+  // manifest — `permissions` is constrained to four values upstream — so this
+  // documents what the own-property guard buys if that constraint is ever
+  // relaxed. Without it the prototype lookup returns a truthy non-namespace
+  // and the permitted set gains a member that no namespace check expects.
+  it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+    'ignores the inherited permission name %j instead of admitting it',
+    (permission) => {
+      const manifest = makeManifest([permission] as unknown as OpenMiniManifest['permissions']);
+      expect(computePermittedNamespaces(manifest).size).toBe(0);
+    },
+  );
 });
 
 describe('getMethodNamespace', () => {

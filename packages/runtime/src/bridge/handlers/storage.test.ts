@@ -66,6 +66,47 @@ describe('createStorageHandlers', () => {
     await expect(handlers.set?.(params, makeContext())).rejects.toThrow(BridgeInvalidParamsError);
   });
 
+  // R6 (Phase 8.5). `get` used to share `set`'s key-length check and so raised
+  // STORAGE_QUOTA_EXCEEDED, making a read report a write-side failure mode and
+  // contradicting docs/security/bridge.md, which lists quota errors for `set`
+  // only. The two calls below use the *same* key, so the difference asserted
+  // is purely the operation: only the one that consumes quota reports quota.
+  describe('quota errors occur only on operations that consume quota', () => {
+    const oversizedKey = 'k'.repeat(DEFAULT_MAX_KEY_BYTES + 1);
+
+    it('get with an over-long key is an invalid argument, not a quota failure', async () => {
+      const handlers = createStorageHandlers();
+      const attempt = handlers.get?.({ key: oversizedKey }, makeContext());
+
+      await expect(attempt).rejects.toThrow(BridgeInvalidParamsError);
+      await expect(attempt).rejects.not.toThrow(BridgeStorageQuotaExceededError);
+    });
+
+    it('set with that same key is still a quota failure', async () => {
+      const handlers = createStorageHandlers();
+      await expect(handlers.set?.({ key: oversizedKey, value: 'v' }, makeContext())).rejects.toThrow(
+        BridgeStorageQuotaExceededError,
+      );
+    });
+
+    it('rejects the over-long get key before consulting the provider', async () => {
+      const calls: string[] = [];
+      const provider: MiniAppStorageProvider = {
+        ...createInMemoryStorageProvider(),
+        get: async (_appId, key) => {
+          calls.push(key);
+          return null;
+        },
+      };
+      const handlers = createStorageHandlers({ provider });
+
+      await expect(handlers.get?.({ key: oversizedKey }, makeContext())).rejects.toThrow(
+        BridgeInvalidParamsError,
+      );
+      expect(calls).toEqual([]);
+    });
+  });
+
   describe('quota enforcement', () => {
     it('accepts a key of exactly the max key byte limit', async () => {
       const handlers = createStorageHandlers();

@@ -25,15 +25,26 @@ export interface OpenMiniBridge {
 export interface ConnectOpenMiniOptions {
   target?: BridgeConnectTarget;
   requestTimeoutMs?: number;
+  /**
+   * Handshake deadline, in ms. Defaults to 10 000. After it expires this
+   * function rejects with `BridgeError('HANDSHAKE_TIMEOUT')` rather than
+   * remaining pending forever.
+   */
+  connectTimeoutMs?: number;
 }
 
 /**
  * Run once, from inside a Mini App document, to complete the handshake with
  * the host and get back the small `openmini.*` capability surface. See
  * docs/security/bridge.md for the full protocol.
+ *
+ * Always settles — see `connectTimeoutMs`. Callers must handle the rejection;
+ * a Mini App that ignores it has no bridge and no way to say so.
  */
 export async function connectOpenMini(options: ConnectOpenMiniOptions = {}): Promise<OpenMiniBridge> {
-  const { sessionId, port } = await initOpenMiniBridge(options.target);
+  const { sessionId, port } = await initOpenMiniBridge(options.target, {
+    connectTimeoutMs: options.connectTimeoutMs,
+  });
   const client = createBridgeClient({ port, sessionId, requestTimeoutMs: options.requestTimeoutMs });
   return {
     storage: createStorageApi(client),
@@ -43,8 +54,12 @@ export async function connectOpenMini(options: ConnectOpenMiniOptions = {}): Pro
   };
 }
 
-export { initOpenMiniBridge } from './bridge/connect';
-export type { BridgeConnectTarget, OpenMiniBridgeConnection } from './bridge/connect';
+export { initOpenMiniBridge, DEFAULT_CONNECT_TIMEOUT_MS } from './bridge/connect';
+export type {
+  BridgeConnectTarget,
+  InitOpenMiniBridgeOptions,
+  OpenMiniBridgeConnection,
+} from './bridge/connect';
 export { createBridgeClient } from './bridge/client';
 export type { BridgeClient, BridgeClientOptions, RawBridgeRequest } from './bridge/client';
 export { BridgeError } from './bridge/errors';

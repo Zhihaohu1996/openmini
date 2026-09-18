@@ -27,6 +27,10 @@ export const BRIDGE_ERROR_CODES = [
   'INVALID_PARAMS',
   'SESSION_INVALID',
   'REQUEST_TIMEOUT',
+  // Like `REQUEST_TIMEOUT`, this is client-synthesized and never sent by the
+  // host: it is how the guest reports that the host's handshake-init never
+  // arrived (or never arrived in an acceptable form) within its own deadline.
+  'HANDSHAKE_TIMEOUT',
   'RATE_LIMITED',
   'STORAGE_QUOTA_EXCEEDED',
   // `NETWORK_REQUEST_FAILED` is deliberately coarse: a browser `fetch`

@@ -63,10 +63,22 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
   const script = `import { connectOpenMini } from '@openmini/sdk';
 
 async function main(): Promise<void> {
-  const openmini = await connectOpenMini();
-  const profile = await openmini.user.getProfile();
-
   const status = document.getElementById('status');
+
+  // connectOpenMini rejects with a HANDSHAKE_TIMEOUT BridgeError if the host
+  // never completes the handshake. Handle it: an app that ignores the
+  // rejection just sits on "starting..." with no bridge and no explanation.
+  let openmini;
+  try {
+    openmini = await connectOpenMini();
+  } catch (error) {
+    if (status) {
+      status.textContent = \`could not reach the host: \${(error as Error).message}\`;
+    }
+    return;
+  }
+
+  const profile = await openmini.user.getProfile();
   if (status) {
     status.textContent = \`connected (user: \${profile.id ?? 'anonymous'})\`;
   }

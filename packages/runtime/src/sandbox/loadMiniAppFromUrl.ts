@@ -1,4 +1,11 @@
-import { createFetchResourceProvider, normalizePackageBaseUrl } from './fetchResourceProvider';
+import { BoundedFetchError, fetchBounded } from '../http/boundedFetch';
+import {
+  createFetchResourceProvider,
+  normalizePackageBaseUrl,
+  PACKAGE_FETCH_INIT,
+  PACKAGE_FETCH_TIMEOUT_MS,
+  PACKAGE_MAX_RESOURCE_BYTES,
+} from './fetchResourceProvider';
 import type { MiniAppResourceProvider } from './types';
 
 export type LoadMiniAppResult =
@@ -33,18 +40,41 @@ export async function loadMiniAppFromUrl(baseUrl: string): Promise<LoadMiniAppRe
   // An unset Accept header defaults to `*/*`, which SPA-fallback middleware
   // (Vite dev server, many static hosts) treats as a navigation request and
   // answers with `index.html` + 200 instead of a real 404.
-  let response: Response;
+  //
+  // Bounded in size and time and failing closed on redirects, by the same
+  // mechanism as the bridge's `network.fetch`. See `../http/boundedFetch`.
+  let result;
   try {
-    response = await fetch(manifestUrl, { headers: { Accept: 'application/json' } });
-  } catch {
+    result = await fetchBounded(
+      manifestUrl.toString(),
+      { ...PACKAGE_FETCH_INIT, headers: { Accept: 'application/json' } },
+      { timeoutMs: PACKAGE_FETCH_TIMEOUT_MS, maxBodyBytes: PACKAGE_MAX_RESOURCE_BYTES },
+    );
+  } catch (error) {
+    if (error instanceof BoundedFetchError) {
+      switch (error.reason) {
+        case 'timeout':
+          return {
+            ok: false,
+            reason: `manifest fetch timed out after ${PACKAGE_FETCH_TIMEOUT_MS}ms`,
+          };
+        case 'too-large':
+          return {
+            ok: false,
+            reason: `manifest exceeds the ${PACKAGE_MAX_RESOURCE_BYTES}-byte limit`,
+          };
+      }
+    }
+    // Includes a refused redirect, which is indistinguishable from any other
+    // browser network error.
     return { ok: false, reason: 'failed to fetch manifest' };
   }
 
-  if (!response.ok) {
-    return { ok: false, reason: `manifest fetch failed (${response.status})` };
+  if (!result.response.ok) {
+    return { ok: false, reason: `manifest fetch failed (${result.response.status})` };
   }
 
-  const manifestJson = await response.text();
+  const manifestJson = result.body;
   return {
     ok: true,
     manifestJson,

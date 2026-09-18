@@ -1,7 +1,32 @@
+import { BoundedFetchError, fetchBounded } from '../http/boundedFetch';
 import { resolveContainedPath } from './containment';
 import type { MiniAppResourceProvider } from './types';
 
 const SUPPORTED_PROTOCOLS = new Set(['http:', 'https:']);
+
+/**
+ * Package-load limits, deliberately mirroring the `NETWORK_*` values the
+ * bridge's `network.fetch` already enforces. Same host, same `fetch`, so the
+ * two paths should not disagree about what "too big" or "too slow" means.
+ */
+export const PACKAGE_FETCH_TIMEOUT_MS = 30_000;
+export const PACKAGE_MAX_RESOURCE_BYTES = 5_242_880;
+
+/**
+ * The request policy every package-load fetch uses.
+ *
+ * `redirect: 'error'` is the load-bearing part: `network.fetch` has always
+ * failed closed on redirects, while the package-load path silently followed
+ * them. A package base URL that redirects elsewhere means the bytes that
+ * arrive are not the bytes the base URL names — which a later phase intending
+ * to verify those bytes cannot tolerate, and which no caller here wants
+ * either.
+ */
+export const PACKAGE_FETCH_INIT = {
+  redirect: 'error',
+  credentials: 'omit',
+  referrerPolicy: 'no-referrer',
+} as const;
 
 /**
  * Normalizes a caller-supplied Mini App package base URL into a single
@@ -90,18 +115,42 @@ export class FetchResourceProvider implements MiniAppResourceProvider {
       throw new Error(`resource path resolved outside the package base: ${relativePath}`);
     }
 
-    let response: Response;
+    // Bounded in size and time by the same mechanism as `network.fetch`, and
+    // failing closed on redirects. See `../http/boundedFetch`.
+    let result;
     try {
-      response = await fetch(url);
-    } catch {
+      result = await fetchBounded(url.toString(), PACKAGE_FETCH_INIT, {
+        timeoutMs: PACKAGE_FETCH_TIMEOUT_MS,
+        maxBodyBytes: PACKAGE_MAX_RESOURCE_BYTES,
+      });
+    } catch (error) {
+      if (error instanceof BoundedFetchError) {
+        switch (error.reason) {
+          case 'timeout':
+            throw new Error(
+              `resource fetch timed out after ${PACKAGE_FETCH_TIMEOUT_MS}ms: ${relativePath}`,
+            );
+          case 'too-large':
+            throw new Error(
+              `resource exceeds the ${PACKAGE_MAX_RESOURCE_BYTES}-byte limit: ${relativePath}`,
+            );
+        }
+      }
+      // Includes a refused redirect: a browser network error carries no cause,
+      // so this cannot distinguish it from DNS/TLS/CORS failure and must not
+      // guess. See the note in the network handler.
       throw new Error(`failed to fetch resource: ${relativePath}`);
     }
 
-    if (!response.ok) {
-      throw new Error(`resource fetch failed (${response.status}): ${relativePath}`);
+    // Checked after the body read rather than before it, because the read is
+    // where the cap lives: an oversized error page is reported as too-large
+    // rather than by its status. Either way the load fails and no unbounded
+    // allocation happens, which is the property that matters.
+    if (!result.response.ok) {
+      throw new Error(`resource fetch failed (${result.response.status}): ${relativePath}`);
     }
 
-    return response.text();
+    return result.body;
   }
 }
 

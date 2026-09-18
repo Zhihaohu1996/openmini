@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createFetchResourceProvider, normalizePackageBaseUrl } from './fetchResourceProvider';
+import { oversizedStreamingResponse, stallingResponse } from '../http/fakeResponses';
+import {
+  createFetchResourceProvider,
+  normalizePackageBaseUrl,
+  PACKAGE_FETCH_TIMEOUT_MS,
+} from './fetchResourceProvider';
 
 function mockFetchOk(text: string) {
   return vi.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve(text) });
@@ -115,5 +120,71 @@ describe('createFetchResourceProvider', () => {
 
     const provider = createFetchResourceProvider('http://localhost:5173/miniapps/hello-remote/');
     await expect(provider.readText('index.html')).rejects.toThrow(/failed to fetch resource/);
+  });
+
+  // A1/W9 (Phase 8.5). The same four guarantees the manifest load now has,
+  // asserted for a resource read: the two are the same threat over the same
+  // transport, so a cap on one and not the other is no cap at all.
+  describe('resource reads are bounded and fail closed', () => {
+    const BASE = 'http://localhost:5173/miniapps/hello-remote/';
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('sends redirect: "error", and reports a refused redirect as a failure', async () => {
+      const fetchMock = vi.fn((_url: unknown, init: { redirect?: string }) =>
+        init.redirect === 'error'
+          ? Promise.reject(new TypeError('Failed to fetch'))
+          : Promise.resolve({ ok: true, status: 302, text: () => Promise.resolve('elsewhere') }),
+      );
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await expect(createFetchResourceProvider(BASE).readText('index.html')).rejects.toThrow(
+        /failed to fetch resource/,
+      );
+      expect((fetchMock.mock.calls[0] as unknown as [unknown, { redirect: string }])[1].redirect).toBe(
+        'error',
+      );
+    });
+
+    it('fails mid-stream on an oversized resource, never accumulating the whole of it', async () => {
+      const { response, state } = oversizedStreamingResponse();
+      global.fetch = vi.fn().mockResolvedValue(response) as unknown as typeof fetch;
+
+      await expect(createFetchResourceProvider(BASE).readText('huge.html')).rejects.toThrow(
+        /exceeds the .*-byte limit/,
+      );
+      expect(state.pulled).toBe(6);
+      expect(state.cancelled).toBe(true);
+    });
+
+    it('does not trust a Content-Length that understates an oversized resource', async () => {
+      const { response } = oversizedStreamingResponse({ contentLength: '12' });
+      global.fetch = vi.fn().mockResolvedValue(response) as unknown as typeof fetch;
+
+      await expect(createFetchResourceProvider(BASE).readText('liar.html')).rejects.toThrow(
+        /exceeds the .*-byte limit/,
+      );
+    });
+
+    it('times out a resource that stalls after headers', async () => {
+      vi.useFakeTimers();
+      const { response, setSignal } = stallingResponse();
+      global.fetch = vi.fn((_url: unknown, init: { signal?: AbortSignal }) => {
+        setSignal(init.signal);
+        return Promise.resolve(response);
+      }) as unknown as typeof fetch;
+
+      const settled = createFetchResourceProvider(BASE)
+        .readText('slow.html')
+        .catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(PACKAGE_FETCH_TIMEOUT_MS);
+
+      expect((await settled) as Error).toHaveProperty(
+        'message',
+        expect.stringContaining('timed out'),
+      );
+    });
   });
 });

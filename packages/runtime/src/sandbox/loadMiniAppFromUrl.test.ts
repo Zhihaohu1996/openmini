@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { oversizedStreamingResponse, stallingResponse } from '../http/fakeResponses';
+import { PACKAGE_FETCH_TIMEOUT_MS } from './fetchResourceProvider';
 import { loadMiniAppFromUrl } from './loadMiniAppFromUrl';
 
 const MANIFEST_JSON = JSON.stringify({
@@ -102,5 +104,78 @@ describe('loadMiniAppFromUrl', () => {
     const result = await loadMiniAppFromUrl('file:///etc/passwd');
     expect(result).toEqual({ ok: false, reason: 'unsupported URL scheme' });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // A1/W9 (Phase 8.5). The bridge's `network.fetch` has always failed closed
+  // on redirects, capped bodies and timed out. The package-load path — same
+  // host, same `fetch` — did none of the three, so a package could be loaded
+  // from somewhere other than the URL that named it, over an unbounded
+  // request that need never finish.
+  describe('the package-load fetch is bounded and fails closed', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('sends redirect: "error", and reports a refused redirect as a failure', async () => {
+      // Modelled on the browser: with redirect:'error' a 3xx never becomes a
+      // response, it rejects the fetch. Asserting the flag as well as the
+      // outcome is what proves we are failing closed rather than just
+      // happening not to be redirected.
+      const fetchMock = vi.fn((_url: unknown, init: { redirect?: string }) =>
+        init.redirect === 'error'
+          ? Promise.reject(new TypeError('Failed to fetch'))
+          : Promise.resolve({ ok: true, status: 302, text: () => Promise.resolve('elsewhere') }),
+      );
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const result = await loadMiniAppFromUrl('http://localhost:5173/miniapps/hello-remote');
+
+      expect(result).toEqual({ ok: false, reason: 'failed to fetch manifest' });
+      expect((fetchMock.mock.calls[0] as unknown as [unknown, { redirect: string }])[1].redirect).toBe(
+        'error',
+      );
+    });
+
+    it('fails mid-stream on an oversized body, never accumulating the whole of it', async () => {
+      const { response, state } = oversizedStreamingResponse();
+      global.fetch = vi.fn().mockResolvedValue(response) as unknown as typeof fetch;
+
+      const result = await loadMiniAppFromUrl('http://localhost:5173/miniapps/huge');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toContain('exceeds the');
+      // 5 MiB cap, 1 MiB chunks: the 6th trips it and the rest is never pulled.
+      expect(state.pulled).toBe(6);
+      expect(state.cancelled).toBe(true);
+    });
+
+    it('does not trust a Content-Length that understates an oversized body', async () => {
+      const { response } = oversizedStreamingResponse({ contentLength: '12' });
+      global.fetch = vi.fn().mockResolvedValue(response) as unknown as typeof fetch;
+
+      const result = await loadMiniAppFromUrl('http://localhost:5173/miniapps/liar');
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toContain('exceeds the');
+    });
+
+    it('times out a response that stalls after headers, not merely a slow fetch', async () => {
+      vi.useFakeTimers();
+      const { response, setSignal } = stallingResponse();
+      global.fetch = vi.fn((_url: unknown, init: { signal?: AbortSignal }) => {
+        setSignal(init.signal);
+        return Promise.resolve(response);
+      }) as unknown as typeof fetch;
+
+      const settled = loadMiniAppFromUrl('http://localhost:5173/miniapps/slow');
+      await vi.advanceTimersByTimeAsync(PACKAGE_FETCH_TIMEOUT_MS);
+
+      const result = await settled;
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toContain('timed out');
+    });
   });
 });

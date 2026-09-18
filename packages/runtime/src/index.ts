@@ -15,7 +15,12 @@ export { gateManifest } from './sandbox/manifestGate';
 export type { ManifestGateResult } from './sandbox/manifestGate';
 export { StaticFixtureResourceProvider, resolveEntryDocument } from './sandbox/resourceProvider';
 export type { ResolveEntryDocumentResult } from './sandbox/resourceProvider';
-export { createFetchResourceProvider, normalizePackageBaseUrl } from './sandbox/fetchResourceProvider';
+export {
+  createFetchResourceProvider,
+  normalizePackageBaseUrl,
+  PACKAGE_FETCH_TIMEOUT_MS,
+  PACKAGE_MAX_RESOURCE_BYTES,
+} from './sandbox/fetchResourceProvider';
 export { loadMiniAppFromUrl } from './sandbox/loadMiniAppFromUrl';
 export type { LoadMiniAppResult } from './sandbox/loadMiniAppFromUrl';
 // The CSP/sandbox policy lives in @openmini/shared (pure string logic, no DOM)

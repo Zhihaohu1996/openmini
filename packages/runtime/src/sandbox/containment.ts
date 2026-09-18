@@ -14,9 +14,13 @@ export type ContainmentResult =
 // clearly) SCHEME_LIKE.
 const WINDOWS_ABSOLUTE_PATTERN = /^[a-zA-Z]:[\\/]/;
 const WINDOWS_UNC_PATTERN = /^\\\\/;
-// Requires "://" (not just ":") so a Windows drive letter is never mistaken
-// for a URL scheme — mirrors @openmini/manifest's entry-path rule.
-const URL_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
+// Matches a bare "scheme:" prefix, not just "scheme://" — mirrors
+// @openmini/manifest's entry-path rule. `scheme:` alone is enough for WHATWG
+// URL resolution to discard the base (see `fetchResourceProvider`'s
+// post-resolution guard), so requiring "//" here accepted inputs that resolve
+// to another origin entirely. Safe against Windows drive letters only because
+// WINDOWS_ABSOLUTE_PATTERN is tested first, below.
+const URL_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 
 /**
  * Decodes a single path segment exactly once. Returns null if the segment is
@@ -55,6 +59,17 @@ function decodeSegmentOnce(segment: string): string | null {
  * Does NOT perform filesystem operations (no symlink resolution, no
  * case-folding) — those are the responsibility of any future
  * filesystem-backed MiniAppResourceProvider implementation.
+ *
+ * This is a check on the *shape of the input string* and nothing more. It is
+ * deliberately not the authority on containment: a caller that resolves the
+ * returned segments against a base URL must check the result as well, because
+ * a string this function accepts can still resolve elsewhere (see
+ * `fetchResourceProvider`'s post-resolution guard, and
+ * `containmentResolution.test.ts` for worked examples).
+ *
+ * Accepted cost of the `scheme:` rejection: a relative path whose first
+ * segment contains a colon, such as `my:file.html`, is rejected. Such names
+ * are already unusable on Windows, so the trade is worth it.
  */
 export function resolveContainedPath(relative: string): ContainmentResult {
   if (typeof relative !== 'string' || relative.trim() === '') {

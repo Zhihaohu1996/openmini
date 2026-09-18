@@ -19,16 +19,20 @@ export function checkEntryPath(value: unknown, path: string): ManifestIssue | nu
     };
   }
 
-  if (ENTRY_PATH_PATTERNS.urlScheme.test(value)) {
-    return { path, code: 'INVALID_ENTRY_PATH', message: 'must not be a URL' };
-  }
-
+  // Order matters: `urlScheme` now matches a bare `scheme:`, which also
+  // matches a Windows drive letter. Testing `windowsAbsolute` first keeps
+  // "C:\index.html" reported as an absolute filesystem path, which is what the
+  // author actually wrote, instead of the less precise "must not be a URL".
   if (ENTRY_PATH_PATTERNS.windowsAbsolute.test(value)) {
     return {
       path,
       code: 'INVALID_ENTRY_PATH',
       message: 'must not be an absolute filesystem path',
     };
+  }
+
+  if (ENTRY_PATH_PATTERNS.urlScheme.test(value)) {
+    return { path, code: 'INVALID_ENTRY_PATH', message: 'must not be a URL' };
   }
 
   if (value.startsWith('/') || value.startsWith('\\')) {

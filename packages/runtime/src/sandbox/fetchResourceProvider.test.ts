@@ -87,6 +87,20 @@ describe('createFetchResourceProvider', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('rejects a path that resolves outside the base, distinctly from a rejected shape', async () => {
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const provider = createFetchResourceProvider('https://host.example/pkg/');
+    // The leading `./` hides the scheme from the input-shape check, so this
+    // reaches the post-resolution guard — and the distinct message proves it
+    // is the guard, not `resolveContainedPath`, doing the rejecting.
+    await expect(provider.readText('./http:evil.com')).rejects.toThrow(
+      /resource path resolved outside the package base/,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('throws on a non-2xx response', async () => {
     global.fetch = vi
       .fn()

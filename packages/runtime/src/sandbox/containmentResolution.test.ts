@@ -1,46 +1,42 @@
-import { describe, expect, it } from 'vitest';
-import { resolveContainedPath, type ContainmentFailureReason } from './containment';
-import { normalizePackageBaseUrl } from './fetchResourceProvider';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { resolveContainedPath } from './containment';
+import { createFetchResourceProvider, normalizePackageBaseUrl } from './fetchResourceProvider';
 
 /**
- * R2 reproduction probe (Phase 8.5).
+ * R2 (Phase 8.5): a resolved package resource must never escape its package
+ * base URL.
  *
- * `FetchResourceProvider.readText` passes a caller-supplied relative path
- * through `resolveContainedPath` and then through `new URL(path, baseUrl)`.
- * Both of those layers inspect only the *shape of the input string*; neither
- * looks at the URL that actually comes out. This file tests the composition of
- * the two, which is the only place the real question can be asked: can a path
- * that both layers accept still resolve outside the package base?
+ * Reading a resource passes a caller-supplied relative path through
+ * `resolveContainedPath`, which inspects the *shape of the input string*, and
+ * then through `new URL(path, baseUrl)`, which can turn a string that looks
+ * relative into an absolute URL. Neither layer looks at the URL that comes
+ * out. This file covers the composition, which is the only level at which the
+ * question that matters can be asked.
  *
- * The answer at Phase 8 is yes, so the `stays under the package base` block
- * below is a fail-before/pass-after regression test.
+ * The probe that motivated this file reproduced the escape at ec543be, so the
+ * end-to-end block is a fail-before/pass-after regression test. It is written
+ * against the real `FetchResourceProvider` rather than a re-implementation of
+ * its logic, because a model of the pipeline cannot prove the pipeline is safe.
  */
 
 const HTTPS_BASE = 'https://host.example/pkg/';
 const HTTP_BASE = 'http://host.example/pkg/';
 
-type ResolutionOutcome =
-  | { kind: 'rejected'; reason: ContainmentFailureReason }
-  | { kind: 'resolved'; url: string };
-
 /**
- * Mirrors `FetchResourceProvider.readText`'s path handling exactly — same
- * containment call, same `segments.join('/')`, same `new URL` against the same
- * normalized base — without performing any I/O.
- */
-function resolveLikeProvider(input: string, rawBase: string): ResolutionOutcome {
-  const containment = resolveContainedPath(input);
-  if (!containment.ok) {
-    return { kind: 'rejected', reason: containment.reason };
-  }
-
-  const base = normalizePackageBaseUrl(rawBase);
-  return { kind: 'resolved', url: new URL(containment.segments.join('/'), base).href };
-}
-
-/**
- * Inputs whose first segment carries a `scheme:` prefix without `//`, plus the
- * opaque schemes. None of these may ever reach the network as written.
+ * Inputs whose first segment carries a `scheme:` prefix without `//`, and the
+ * opaque schemes. The raw-string forms are rejected outright by the shape
+ * check; the `./`-prefixed forms are not, and are the reason the
+ * post-resolution guard cannot be replaced by a stricter input check — the
+ * shape check sees the caller's raw string (which begins with `.`, so no
+ * scheme is visible), while `new URL` is handed the rejoined, percent-decoded
+ * segments, by which point the leading `./` is gone and `%68` has become `h`.
+ * The two layers genuinely do not see the same string.
+ *
+ * Note that not every row is an escape at every base: a scheme *matching* the
+ * base's scheme is treated as a relative reference and stays inside the
+ * package. Which rows escape therefore depends on the base, which is exactly
+ * why the assertion below is about the resolved URL rather than about which
+ * inputs get rejected.
  */
 const SCHEME_PREFIXED_INPUTS = [
   'https:evil.com',
@@ -50,29 +46,35 @@ const SCHEME_PREFIXED_INPUTS = [
   'data:text/html,x',
   'javascript:alert(1)',
   'about:blank',
+  './https:evil.com',
+  './http:evil.com',
+  '.\\https:evil.com',
+  './%68ttps:evil.com',
+  './data:text/html,x',
+  './javascript:alert(1)',
 ] as const;
 
-const KNOWN_GOOD_INPUTS = ['index.html', 'sub/a.html'] as const;
+const KNOWN_GOOD_INPUTS = ['index.html', 'sub/a.html', './index.html', 'a/./b.html'] as const;
 
 describe('WHATWG URL resolution against a package base (pinned parser behaviour)', () => {
-  // These assertions are about the platform, not about our code: they are the
-  // reason a post-resolution containment check cannot be replaced by any amount
-  // of input-string inspection. They must hold before and after the R2 fix; if
-  // a future runtime changes them, the guard is what keeps us safe, and this
+  // These assertions are about the platform, not our code: they are the reason
+  // a post-resolution containment check cannot be replaced by any amount of
+  // input-string inspection. They hold before and after the R2 fix; if a
+  // future runtime changes them, the guard is what keeps us safe and this
   // block is what tells us the ground moved.
   it.each([
     // A `scheme:` prefix matching the base scheme is treated as a *relative*
     // reference: the scheme is dropped and the path resolves inside the base.
     ['https:evil.com', HTTPS_BASE, 'https://host.example/pkg/evil.com'],
     ['http:evil.com', HTTP_BASE, 'http://host.example/pkg/evil.com'],
-    // A `scheme:` prefix that differs from the base scheme is treated as an
-    // *absolute* URL, and the base is discarded entirely.
+    // A `scheme:` prefix differing from the base scheme is an *absolute* URL,
+    // and the base is discarded entirely.
     ['https:evil.com', HTTP_BASE, 'https://evil.com/'],
     ['http:evil.com', HTTPS_BASE, 'http://evil.com/'],
     // `scheme:/x` is a scheme-relative path: it keeps the base host but
     // discards the base *path*, so it escapes the package directory.
     ['https:/evil.com', HTTPS_BASE, 'https://host.example/evil.com'],
-    // A backslash run is normalized to `//`, making it a full authority.
+    // A backslash run normalizes to `//`, making it a full authority.
     ['https:\\\\evil.com', HTTPS_BASE, 'https://evil.com/'],
     // Opaque schemes resolve to themselves; the base is irrelevant.
     ['data:text/html,x', HTTPS_BASE, 'data:text/html,x'],
@@ -83,29 +85,108 @@ describe('WHATWG URL resolution against a package base (pinned parser behaviour)
   });
 });
 
-describe.each([
-  ['same-scheme base', HTTPS_BASE],
-  ['cross-scheme base', HTTP_BASE],
-])('resolveContainedPath + new URL stays under the package base (%s)', (_label, base) => {
-  const baseHref = normalizePackageBaseUrl(base).href;
+describe('resolveContainedPath is a shape check, not a containment authority', () => {
+  it.each([
+    'https:evil.com',
+    'http:evil.com',
+    'https:/evil.com',
+    'https:\\\\evil.com',
+    'data:text/html,x',
+    'javascript:alert(1)',
+    'about:blank',
+  ])('rejects the bare scheme prefix in %j', (input) => {
+    const result = resolveContainedPath(input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('SCHEME_LIKE');
+    }
+  });
 
-  it.each(SCHEME_PREFIXED_INPUTS)(
-    'never resolves %j to a URL outside the package base',
+  it.each(['./https:evil.com', '.\\https:evil.com', './%68ttps:evil.com'])(
+    'still accepts %j, whose scheme is hidden from it',
     (input) => {
-      const outcome = resolveLikeProvider(input, base);
-
-      // Either layer may do the rejecting — what matters is that nothing which
-      // survives both layers points outside the package root.
-      if (outcome.kind === 'resolved') {
-        expect(outcome.url.startsWith(baseHref)).toBe(true);
-      } else {
-        expect(outcome.kind).toBe('rejected');
+      // Not a bug in this function — it is answering a question about the
+      // input string, and the input string does not start with a scheme. It is
+      // a demonstration that the answer is not sufficient on its own.
+      const result = resolveContainedPath(input);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.segments.join('/')).toMatch(/^https:/);
       }
     },
   );
 
-  it.each(KNOWN_GOOD_INPUTS)('still resolves the ordinary relative path %j', (input) => {
-    const outcome = resolveLikeProvider(input, base);
-    expect(outcome).toEqual({ kind: 'resolved', url: `${baseHref}${input}` });
+  it('rejects a first segment containing a colon (the accepted cost)', () => {
+    const result = resolveContainedPath('my:file.html');
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe.each([
+  ['same-scheme base', HTTPS_BASE],
+  ['cross-scheme base', HTTP_BASE],
+])('FetchResourceProvider never reads outside the package base (%s)', (_label, base) => {
+  const baseHref = normalizePackageBaseUrl(base).href;
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function installFetch() {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve('x') });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  it.each(SCHEME_PREFIXED_INPUTS)('requests nothing outside the base for %j', async (input) => {
+    const fetchMock = installFetch();
+    const provider = createFetchResourceProvider(base);
+
+    // The input may be refused by either layer, or accepted as an ordinary
+    // file inside the package — all three are fine. What must never happen is
+    // a request to a URL outside the package root, so the assertion is on the
+    // requests actually made. Checking after the fact would be too late: for
+    // `javascript:`/`data:` the request itself is the vulnerability.
+    await provider.readText(input).catch(() => undefined);
+
+    for (const call of fetchMock.mock.calls as unknown as URL[][]) {
+      expect(String(call[0]).startsWith(baseHref)).toBe(true);
+    }
+  });
+
+  it('refuses a cross-scheme resolution outright rather than reading it', async () => {
+    const fetchMock = installFetch();
+    const crossScheme = base === HTTPS_BASE ? './http:evil.com' : './https:evil.com';
+
+    await expect(createFetchResourceProvider(base).readText(crossScheme)).rejects.toThrow(
+      /resolved outside the package base/,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('treats a same-scheme prefix as an ordinary file inside the package', async () => {
+    const fetchMock = installFetch();
+    const sameScheme = base === HTTPS_BASE ? './https:evil.com' : './http:evil.com';
+
+    // Characterization, not an endorsement: the parser drops the redundant
+    // scheme, leaving a file named `evil.com` in the package root. Contained,
+    // therefore allowed — and worth pinning, because it is the one row in the
+    // table whose benign outcome depends on a parser detail.
+    await expect(createFetchResourceProvider(base).readText(sameScheme)).resolves.toBe('x');
+    expect(String((fetchMock.mock.calls as unknown as URL[][])[0]?.[0])).toBe(
+      `${baseHref}evil.com`,
+    );
+  });
+
+  it.each(KNOWN_GOOD_INPUTS)('still reads the ordinary relative path %j', async (input) => {
+    const fetchMock = installFetch();
+    const provider = createFetchResourceProvider(base);
+
+    await expect(provider.readText(input)).resolves.toBe('x');
+    const requested = String((fetchMock.mock.calls as unknown as URL[][])[0]?.[0]);
+    expect(requested.startsWith(baseHref)).toBe(true);
   });
 });

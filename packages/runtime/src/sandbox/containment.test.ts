@@ -45,7 +45,22 @@ describe('resolveContainedPath', () => {
     },
   );
 
-  it.each([['https://example.com'], ['file:///etc/passwd'], ['//attacker.example/x']])(
+  it.each([
+    ['https://example.com'],
+    ['file:///etc/passwd'],
+    ['//attacker.example/x'],
+    // A bare `scheme:` with no `//` is still absolute to the WHATWG parser,
+    // and resolves away from the package base. See containmentResolution.test.
+    ['https:evil.com'],
+    ['https:/evil.com'],
+    ['https:\\\\evil.com'],
+    ['data:text/html,x'],
+    ['javascript:alert(1)'],
+    ['about:blank'],
+    // The accepted cost of matching a bare scheme: a colon anywhere in the
+    // first segment is now rejected. Such names are unusable on Windows.
+    ['my:file.html'],
+  ])(
     'rejects URL-like entry %s',
     (input) => {
       const result = resolveContainedPath(input);

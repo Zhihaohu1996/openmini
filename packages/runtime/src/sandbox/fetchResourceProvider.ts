@@ -41,6 +41,32 @@ export function normalizePackageBaseUrl(rawBaseUrl: string): URL {
 }
 
 /**
+ * Post-resolution containment: is the URL that resolution actually produced
+ * still inside the package root?
+ *
+ * `resolveContainedPath` asks a different question — whether the *input
+ * string* looks like a contained relative path — and no answer to that
+ * question can substitute for this one. WHATWG `URL` resolution turns several
+ * inputs that look relative into absolute URLs: a bare `scheme:` prefix that
+ * differs from the base's scheme discards the base entirely
+ * (`new URL('https:evil.com', 'http://h/p/')` is `https://evil.com/`), and
+ * `scheme:/path` keeps the host but discards the base path
+ * (`new URL('https:/x', 'https://h/p/')` is `https://h/x`). Worse, the two
+ * layers do not even see the same string: the shape check runs on the caller's
+ * input, while resolution runs on the rejoined, percent-decoded segments, so a
+ * leading `./` or an encoded scheme (`./%68ttps:evil.com`) hides a scheme from
+ * the input check entirely. This check is therefore the load-bearing one, and
+ * it is the only one here that does not depend on predicting parser behaviour.
+ *
+ * `baseUrl` is normalized to end in `/`, so a prefix match on the serialized
+ * form means "inside this directory": scheme, host, port and path must all
+ * agree, and `URL` has already collapsed any `..` segments before we look.
+ */
+function isUnderPackageBase(resolved: URL, baseUrl: URL): boolean {
+  return resolved.href.startsWith(baseUrl.href);
+}
+
+/**
  * HTTP-fetch-backed `MiniAppResourceProvider`: reads a Mini App package's
  * files over the network from a fixed base URL (its package root), rather
  * than from an in-memory map like `StaticFixtureResourceProvider`. See
@@ -60,6 +86,9 @@ export class FetchResourceProvider implements MiniAppResourceProvider {
     }
 
     const url = new URL(containment.segments.join('/'), this.baseUrl);
+    if (!isUnderPackageBase(url, this.baseUrl)) {
+      throw new Error(`resource path resolved outside the package base: ${relativePath}`);
+    }
 
     let response: Response;
     try {

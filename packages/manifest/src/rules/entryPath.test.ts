@@ -13,9 +13,17 @@ describe('checkEntryPath', () => {
     expect(checkEntryPath('/etc/x', 'entry')).toMatchObject({ code: 'INVALID_ENTRY_PATH' });
   });
 
-  it('rejects an absolute filesystem path (Windows)', () => {
-    expect(checkEntryPath('C:\\x', 'entry')).toMatchObject({ code: 'INVALID_ENTRY_PATH' });
-  });
+  it.each(['C:\\x', 'C:/x'])(
+    'rejects the absolute Windows path %s as a filesystem path, not as a URL',
+    (value) => {
+      // The drive letter also matches the (now bare-scheme) URL pattern, so
+      // this pins the check order that keeps the diagnostic precise.
+      expect(checkEntryPath(value, 'entry')).toMatchObject({
+        code: 'INVALID_ENTRY_PATH',
+        message: expect.stringContaining('absolute filesystem path'),
+      });
+    },
+  );
 
   it('rejects a root-absolute path', () => {
     expect(checkEntryPath('/index.html', 'entry')).toMatchObject({
@@ -37,6 +45,18 @@ describe('checkEntryPath', () => {
       message: expect.stringContaining('URL'),
     });
   });
+
+  it.each(['https:evil.com', 'https:/evil.com', 'data:text/html,x', 'javascript:alert(1)'])(
+    'rejects the bare-scheme URL entry %s',
+    (value) => {
+      // No `//`, but still absolute to the WHATWG parser: such an entry names
+      // a document outside the package it is declared in.
+      expect(checkEntryPath(value, 'entry')).toMatchObject({
+        code: 'INVALID_ENTRY_PATH',
+        message: expect.stringContaining('URL'),
+      });
+    },
+  );
 
   it('rejects path traversal', () => {
     expect(checkEntryPath('../index.html', 'entry')).toMatchObject({

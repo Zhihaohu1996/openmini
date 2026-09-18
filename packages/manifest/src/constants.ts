@@ -29,9 +29,14 @@ export const ID_PATTERN = /^[a-z]([a-z0-9-]*[a-z0-9])?(\.[a-z]([a-z0-9-]*[a-z0-9
 export const SEMVER_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
-// Requires "://" (not just ":") so a Windows drive letter like "C:\" or "C:/"
-// is never mistaken for a URL scheme.
-const URL_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
+// Matches a bare "scheme:" prefix, not just "scheme://". A scheme with no
+// "//" is still an absolute URL to the WHATWG parser — `https:evil.com` and
+// `https:/evil.com` both resolve away from a package base — so accepting them
+// as entry paths would declare an entry that lives outside its own package.
+// `checkEntryPath` tests windowsAbsolute BEFORE this, so "C:\x" and "C:/x"
+// keep their precise "absolute filesystem path" diagnostic rather than
+// degrading to the vaguer "must not be a URL".
+const URL_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 const WINDOWS_ABSOLUTE_PATTERN = /^[a-zA-Z]:[\\/]/;
 
 export const ENTRY_PATH_PATTERNS = {

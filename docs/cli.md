@@ -42,11 +42,32 @@ my-app/                 # authoring project
 
 ## `openmini init`
 
+```
+openmini init <dir> --id <app.id> [--name <name>] [--force]
+```
+
 Scaffolds an authoring project whose first `openmini build` succeeds: an HTML
 shell with the required empty `<script></script>` placeholder, an inline
 `<style>` block rather than a stylesheet link, no CSP `<meta>` (the CLI owns
 that), and a `package.json` declaring `@openmini/sdk`. Run your package
 manager's install before building.
+
+`--id` is validated with the same rules `openmini validate` applies, before
+anything is written, so `init` output always passes `validate`.
+
+**Without `--force`, a conflict leaves the directory byte-for-byte
+unchanged.** All four destinations (`openmini.json`, `package.json`,
+`src/index.html`, `src/main.ts`) are checked before any of them is created;
+if any exists, the command fails listing *every* conflict and writes nothing
+— not even the `src/` directory. `--force` overwrites all four.
+
+This is a preflight check, not a transaction: it makes conflict handling
+atomic, but a mid-write I/O failure (disk full, permissions) can still leave
+a partial scaffold.
+
+The scaffolded entry script handles `connectOpenMini()`'s rejection, so a new
+app reports a failed handshake rather than hanging — see
+[security/bridge.md](security/bridge.md)'s "Handshake failure".
 
 ## `openmini validate`
 
@@ -59,6 +80,21 @@ identical text. It adds no validation rules of its own.
 Bundles `src/main.ts` into a single IIFE, inlines it into `src/index.html`,
 hashes the script and any inline `<style>`, generates the CSP, and writes the
 package. The output entry filename comes from the manifest's `entry`.
+
+### `--out` must stay inside the project
+
+`--out` is resolved **relative to the project directory**, not the working
+directory, and must be a strict descendant of it. `openmini build` deletes its
+output directory before writing, so an `--out` pointing elsewhere would delete
+something you did not nominate — with `--out .`, the project's own sources.
+
+Rejected before any filesystem change: the project root itself, any ancestor,
+any sibling or outside path, and any absolute path that resolves outside the
+project (including a different Windows drive).
+
+Not caught: an `--out` that is a **symlink** pointing outside the project.
+`resolve` does not follow links; this matches the deliberate
+no-symlink-resolution stance the runtime's containment module documents.
 
 ### The CLI owns the policy
 
@@ -88,10 +124,17 @@ blank frame:
 | `onclick=` and other handler attributes | `script-src-attr 'none'`; a hash does not lift it |
 | `style=` attributes | governed by `style-src-attr`; hashes never apply to attributes, and `'unsafe-hashes'` is not added |
 | `eval`, `new Function`, dynamic `import()` | no `'unsafe-eval'`, and an opaque-origin `srcdoc` document has no base URL to resolve an import against |
-| `<img>`, `<iframe>`, `<object>`, `<form>`, `<base>`, fonts, workers | the corresponding directives are `'none'` |
+| `<img>`, `<iframe>`, `<object>`, `<form>`, `<base>` | the corresponding directives are `'none'` |
 
 Styling is supported through a hashed inline `<style>` element. Images and
 remote assets remain unavailable in this phase.
+
+Fonts and workers are also unusable — `font-src` and `worker-src` are
+`'none'` — but the build does **not** currently detect or reject them, so
+they are absent from the table above: there is no `@font-face`/`new Worker()`
+check to describe. A package using either builds successfully and then fails
+silently at load. Adding those checks is feature work, not a documentation
+fix.
 
 ## `openmini dev`
 
@@ -107,9 +150,33 @@ than by flag:
 - serves only known extensions (`.html`, `.json`) with explicit content
   types, refusing anything else rather than guessing.
 
+`--port` must be an integer in 1–65535; anything else is rejected rather than
+coerced.
+
 The URL shape matches what `loadMiniAppFromUrl` expects, so you can paste it
 straight into the host's "load by URL" control. There is no watch/rebuild
 mode; re-run `openmini build`.
+
+## Exit codes
+
+| Code | When |
+|---|---|
+| `0` | The command succeeded, or a help/version request was served. |
+| `1` | Anything else: an unknown command or flag, a missing or malformed flag value, an invalid manifest, a failed build, or a refused `init`/`--out`. |
+
+Every command returns its own exit code; the top-level catch in `cli.ts` is a
+last resort for genuinely unexpected throws, not the mechanism by which
+ordinary failures become non-zero.
+
+Two details worth knowing, both previously surprising:
+
+- `--version`/`-v` is honoured **only as the first argument**. It is not
+  scanned across the whole command line, so `openmini init app --name -v`
+  scaffolds an app named `-v` rather than printing the version.
+- `<command> --help` works for every command and exits 0.
+
+`openmini dev` never exits on its own — it holds the process open until
+interrupted, so it has no exit code to report.
 
 ## What this phase does not provide
 

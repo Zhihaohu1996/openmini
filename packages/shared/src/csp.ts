@@ -4,8 +4,11 @@
  *
  * This lives in @openmini/shared rather than @openmini/runtime because it is
  * pure string logic with no DOM dependency, and two very different consumers
- * need the *same* policy: the browser runtime that enforces it, and the Node
- * CLI that generates packages which must satisfy it. Duplicating it once
+ * need the *same* policy: the browser runtime that *embeds* it in the sandbox
+ * document, and the Node CLI that generates packages which must satisfy it.
+ * Neither of them enforces it — the browser does, when it parses the
+ * document's `Content-Security-Policy` meta tag (see
+ * docs/security/sandbox.md). Duplicating it once
  * already produced a "keep this list in sync by hand" comment in the host's
  * fixture build script; there must be exactly one definition.
  *

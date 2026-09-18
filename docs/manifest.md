@@ -18,7 +18,8 @@ concerns.
 | `name` | string | yes | Non-empty, at most 100 characters. |
 | `version` | string | yes | A valid [Semantic Version 2.0.0](https://semver.org) string. |
 | `entry` | string | yes | Relative, application-internal path. See [Entry path rules](#entry-path-rules). |
-| `permissions` | array of string | yes (may be empty) | Each element must be one of `storage`, `navigation`, `user`. No duplicates. |
+| `permissions` | array of string | yes (may be empty) | Each element must be one of `storage`, `navigation`, `user`, `network`. No duplicates. |
+| `network` | object | no | Declares the hostnames `network.fetch` may reach. Required in practice by the `network` permission. See [`docs/security/bridge.md`](security/bridge.md). |
 
 Unknown top-level fields are **rejected** in schemaVersion 1 — this is intentionally strict so
 the contract can evolve later without ambiguity about what a given manifest author intended.
@@ -64,9 +65,16 @@ scope until a later phase.
 `entry` must be a relative, application-internal path (e.g. `index.html`). It must **not** be:
 
 - An absolute filesystem path (e.g. `/etc/passwd`, `C:\Windows\x`).
-- A URL (e.g. `https://example.com`, `file:///index.html`).
+- A URL (e.g. `https://example.com`, `file:///index.html`). A bare `scheme:` with no `//`
+  counts — `https:evil.com` and `data:text/html,x` are URLs to the WHATWG parser and resolve
+  away from the package, so they are rejected too.
 - A root-absolute path (e.g. `/index.html`).
 - A path containing traversal (e.g. `../secret.html`, `a/../../b.html`).
+
+Because a bare `scheme:` is rejected, a relative path whose **first segment contains a colon**
+(e.g. `my:file.html`) is also rejected. This is an accepted cost: such names are already
+unusable on Windows, and the alternative is accepting entry paths that resolve outside the
+package they are declared in.
 
 This check validates the **string shape** of `entry` only. It is defense-in-depth, not the
 sandbox boundary: the eventual runtime must still canonicalize and re-check the resolved path
@@ -81,6 +89,8 @@ confusable/normalization attacks.
 - `storage`
 - `navigation`
 - `user`
+- `network` — also requires a top-level `network` declaration naming the
+  hostnames the Mini App may reach; the permission alone grants nothing.
 
 Any other value fails validation. Duplicate entries also fail validation — the error is
 reported against the second (repeated) occurrence's array index, so it's clear which entry to
@@ -149,7 +159,7 @@ tooling", not "the manifest is wrong".
 `@openmini/manifest` implements v1 validation as handwritten TypeScript (no JSON-Schema-driven
 runtime engine like Ajv, no schema library like Zod). This is deliberately a **schemaVersion 1
 implementation decision**, not a permanent architectural stance: v1 is small, flat, and fixed
-(six top-level fields, no nesting), so hand-written, independently-audited checks are simpler
+(seven top-level fields, only one of them nested), so hand-written, independently-audited checks are simpler
 and carry zero runtime dependencies. If a future schemaVersion introduces meaningfully nested or
 polymorphic structure, the project should re-evaluate schema-driven runtime validation (Ajv,
 Zod, or another appropriate approach) rather than indefinitely extending hand-rolled

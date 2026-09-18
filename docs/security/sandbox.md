@@ -85,7 +85,7 @@ object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'none'; scrip
 Notes:
 
 - `script-src` uses a `sha256-...` hash of the fixture's exact inline bootstrap script — never
-  `'unsafe-inline'` or `'unsafe-eval'`. [`csp.ts`](../../packages/runtime/src/sandbox/csp.ts)
+  `'unsafe-inline'` or `'unsafe-eval'`. [`csp.ts`](../../packages/shared/src/csp.ts)
   enforces this at build time (`buildMiniAppCsp` throws if given anything else), so a regression
   can't silently widen the policy.
 - No directive uses `'self'`. For `srcdoc` content, relative URLs resolve against the *embedding*
@@ -136,6 +136,30 @@ resolving anything against it:
   that package directory, never its parent — this matters because WHATWG `URL` resolution treats a
   base path without a trailing slash as a file, not a directory.
 
+**Request policy (bounded, and failing closed).** Every package-load request — the manifest and
+every resource — uses the same lifecycle the bridge's `network.fetch` uses
+([`boundedFetch.ts`](../../packages/runtime/src/http/boundedFetch.ts)):
+
+- `redirect: 'error'`. A base URL that redirects elsewhere means the bytes that arrive are not the
+  bytes the URL named, so the load fails rather than silently following.
+- A **5 MiB** cap per response, enforced *while bytes are read*: received bytes are counted per
+  chunk and the reader is cancelled the moment the cap is passed. `Content-Length` is never
+  consulted, so a missing or dishonest header cannot raise the ceiling.
+- A **30 s** deadline covering the fetch *and* the body read, not the fetch call alone — a
+  response that stalls after headers times out.
+
+The limits (`PACKAGE_FETCH_TIMEOUT_MS`, `PACKAGE_MAX_RESOURCE_BYTES`) deliberately mirror the
+`NETWORK_*` values: it is the same host issuing the same kind of request, so the two paths should
+not disagree about what "too big" or "too slow" means.
+
+**Containment is checked after resolution, not only before it.** `resolveContainedPath` inspects
+the *shape of the input string*; `FetchResourceProvider` additionally verifies that the URL
+`new URL(path, baseUrl)` actually produced is still under the package base, and refuses to issue
+the request otherwise. The two are not interchangeable, because they do not even see the same
+string: the shape check runs on the caller's raw input, while resolution runs on the rejoined,
+percent-decoded segments — so a leading `./` or an encoded scheme (`./%68ttps:evil.com`) hides a
+scheme from the input check entirely. The post-resolution check is the load-bearing one.
+
 The host's "load by URL" control (`apps/host/src/App.tsx`) is a host-operator-facing tool, not a
 Mini-App-facing capability — equivalent in trust terms to a user typing a URL into their own
 browser's address bar. `fetch()` runs in the host's own trusted JS context, before any sandbox
@@ -155,11 +179,19 @@ resource-resolution time. It rejects:
 - absolute POSIX paths (`/etc/passwd`)
 - Windows drive paths (`C:\Windows\x`, `C:/Windows/x`) and UNC paths (`\\host\share`)
 - backslashes as path separators
-- URL-like entries (`http:`, `https:`, `file:`, protocol-relative `//host/...`)
+- URL-like entries, including a **bare `scheme:` with no `//`** (`https:evil.com`, `data:...`,
+  `javascript:...`, `about:blank`) as well as protocol-relative `//host/...`
 - malformed/empty segments
+
+Accepted cost of matching a bare scheme: a relative path whose first segment contains a colon
+(`my:file.html`) is rejected. Such names are already unusable on Windows.
 
 The runtime never trusts manifest validation alone for this — `StaticFixtureResourceProvider` and
 `resolveEntryDocument` both re-run containment on every path before touching file content.
+
+This function answers a question about an input *string*, and is deliberately **not** the
+authority on containment. A caller that resolves its output against a base URL must check the
+result too; see the post-resolution guard described under "Resource loading".
 
 ## Manifest gate
 

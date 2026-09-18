@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MANIFEST_PERMISSIONS } from './constants';
 import { validateManifest } from './validateManifest';
 
 const VALID_MANIFEST = {
@@ -19,11 +20,17 @@ describe('validateManifest — valid manifests', () => {
     }
   });
 
-  it('accepts all three supported permissions', () => {
+  it('accepts all four supported permissions', () => {
+    // Named from MANIFEST_PERMISSIONS rather than a literal list, so adding a
+    // permission cannot leave this test quietly covering a subset — which is
+    // what happened when `network` was added in Phase 7 and this stayed at
+    // three.
     const result = validateManifest({
       ...VALID_MANIFEST,
-      permissions: ['storage', 'navigation', 'user'],
+      permissions: [...MANIFEST_PERMISSIONS],
+      network: { domains: ['api.example.com'] },
     });
+    expect(MANIFEST_PERMISSIONS).toContain('network');
     expect(result.valid).toBe(true);
   });
 

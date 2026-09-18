@@ -1,4 +1,5 @@
 import type { OpenMiniManifest } from '@openmini/manifest';
+import { BRIDGE_NAMESPACES } from '@openmini/shared';
 import { describe, expect, it } from 'vitest';
 import { computePermittedNamespaces, getMethodNamespace, isNamespaceKnown } from './capabilities';
 
@@ -52,10 +53,15 @@ describe('getMethodNamespace', () => {
 });
 
 describe('isNamespaceKnown', () => {
-  it('accepts the three Phase 4 namespaces', () => {
-    expect(isNamespaceKnown('storage')).toBe(true);
-    expect(isNamespaceKnown('navigation')).toBe(true);
-    expect(isNamespaceKnown('user')).toBe(true);
+  it('accepts every declared bridge namespace, including network', () => {
+    // Driven from BRIDGE_NAMESPACES rather than a hand-kept list: this test
+    // said "the three Phase 4 namespaces" and omitted `network` for the whole
+    // of Phase 7, so the namespace added by that phase was never asserted.
+    expect(BRIDGE_NAMESPACES).toHaveLength(4);
+    expect(BRIDGE_NAMESPACES).toContain('network');
+    for (const namespace of BRIDGE_NAMESPACES) {
+      expect(isNamespaceKnown(namespace)).toBe(true);
+    }
   });
 
   it('rejects an unknown namespace', () => {

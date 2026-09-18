@@ -24,8 +24,12 @@ function without(manifest: Record<string, unknown>, field: string) {
 const fixtures: Array<{ name: string; manifest: unknown; expectValid: boolean }> = [
   { name: 'minimal valid manifest', manifest: VALID_MANIFEST, expectValid: true },
   {
-    name: 'all three supported permissions',
-    manifest: { ...VALID_MANIFEST, permissions: ['storage', 'navigation', 'user'] },
+    name: 'all four supported permissions',
+    manifest: {
+      ...VALID_MANIFEST,
+      permissions: ['storage', 'navigation', 'user', 'network'],
+      network: { domains: ['api.example.com'] },
+    },
     expectValid: true,
   },
   { name: 'empty permissions', manifest: { ...VALID_MANIFEST, permissions: [] }, expectValid: true },

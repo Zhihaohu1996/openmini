@@ -16,6 +16,21 @@ export interface MiniAppHostProps {
   resourceProvider: MiniAppResourceProvider;
 }
 
+/**
+ * **Contract: these props are immutable for the lifetime of a mounted
+ * `MiniAppHost`.** Changing either one in place would leave the existing
+ * sandbox running against the previous manifest/provider, because the
+ * teardown below is keyed to unmount rather than to a prop change.
+ *
+ * Callers satisfy this today without relying on it being enforced:
+ * `RemoteMiniAppLoader` passes through a `loading` state that unmounts this
+ * component — firing the cleanup and destroying the sandbox — before
+ * remounting with new values, and the fixture `scenario` never changes
+ * without a page reload. So the stale-sandbox path is not reachable; this is
+ * latent debt, recorded rather than fixed, and no code depends on the comment.
+ * A caller that swaps props in place must remount instead (e.g. via `key`).
+ */
+
 type DisplayState = SandboxState | 'idle';
 
 /**

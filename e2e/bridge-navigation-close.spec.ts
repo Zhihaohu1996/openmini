@@ -14,9 +14,19 @@ test('navigation.close() resolves before the sandbox is torn down (ack-confirmed
 
   // The Mini App's own call resolved successfully...
   expect(closeOutcome).toBe('resolved');
-  // ...and only afterward does the host actually tear the sandbox down —
-  // proving destroy() waited for the close-ack round-trip rather than
-  // racing a timer against message delivery.
+
+  // ...and only afterward does the host tear the sandbox down.
+  //
+  // On its own, that ordering does not distinguish the ack path from the
+  // 2000ms fallback timer, which also ends in a teardown — the title claimed
+  // "ack-confirmed" while the assertions were consistent with either. Timing
+  // is what separates them: an ack round-trip between two frames in the same
+  // browser completes in milliseconds, so a teardown well inside the fallback
+  // window can only have come from the ack.
+  const teardownStart = Date.now();
   await expect(page.getByTestId('miniapp-status')).toHaveText('status: destroyed', { timeout: 10_000 });
+  const teardownMs = Date.now() - teardownStart;
+
+  expect(teardownMs).toBeLessThan(1500);
   await expect(page.locator('[data-testid="miniapp-container"] iframe')).toHaveCount(0);
 });

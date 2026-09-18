@@ -26,8 +26,14 @@ a bridge namespace:
 | `network` | `network.*` | `network.fetch(url, init)` |
 
 The permitted-namespace set is computed once, at bridge-creation time, from
-the manifest already gated by `gateManifest` — no new manifest re-parsing, no
-runtime mutation of the permitted set. Every request goes through two ordered
+the manifest already gated by `gateManifest` — no new manifest re-parsing, and
+no runtime mutation of that **namespace** set. This says nothing about the
+method registry: a host may pass its own `handlers` to
+`createBridgeDispatcher`, and what is invocable within a permitted namespace is
+whatever that registry contains. What the dispatcher guarantees is that the
+registry is *closed* — only own, callable properties of a permitted namespace
+can be reached, so inherited members such as `constructor` or `toString` are
+`UNKNOWN_METHOD` rather than invocable. Every request goes through two ordered
 checks in [`dispatcher.ts`](../../packages/runtime/src/bridge/dispatcher.ts):
 
 1. **Namespace check** — is the method's namespace present in the manifest's
@@ -106,11 +112,21 @@ type BridgeErrorCode =
   | 'PERMISSION_DENIED'
   | 'INVALID_PARAMS'
   | 'SESSION_INVALID'
-  | 'REQUEST_TIMEOUT'   // client-synthesized only; the host never sends this
+  | 'REQUEST_TIMEOUT'     // client-synthesized only; the host never sends this
+  | 'HANDSHAKE_TIMEOUT'   // client-synthesized only; the host never sends this
   | 'RATE_LIMITED'
   | 'STORAGE_QUOTA_EXCEEDED'   // storage.set only — see "Persistent storage.*" below
+  | 'NETWORK_REQUEST_FAILED'
+  | 'NETWORK_TIMEOUT'
+  | 'NETWORK_REQUEST_TOO_LARGE'
+  | 'NETWORK_RESPONSE_TOO_LARGE'
   | 'INTERNAL_ERROR';
 ```
+
+Thirteen codes. Two of them are never sent by the host:
+`REQUEST_TIMEOUT` is raised by the client when a reply does not arrive in
+time, and `HANDSHAKE_TIMEOUT` when the host's `handshake-init` never arrives
+at all — see [Handshake failure](#handshake-failure).
 
 Error messages are short, generic, and non-leaking.
 
@@ -208,6 +224,12 @@ which provider is plugged in):
 - Any of the three violations rejects the `storage.set` call with
   `STORAGE_QUOTA_EXCEEDED`, leaving previously stored data completely
   unchanged — no partial writes.
+- **`storage.get` never raises `STORAGE_QUOTA_EXCEEDED`.** A read consumes no
+  quota, so an over-long key there is a malformed argument and is reported as
+  `INVALID_PARAMS`, consistent with the other key checks. The same key passed
+  to `storage.set` still yields `STORAGE_QUOTA_EXCEEDED`; the asymmetry is
+  deliberate, so an error code always indicates the kind of failure that
+  actually occurred.
 - **Known limitation — best-effort, not transactional.** The existing-key
   lookup and the subsequent write are not atomic with respect to concurrent
   `storage.set` calls for the same `manifest.id`; two concurrent calls can
@@ -266,6 +288,26 @@ shutting down" message. In real usage this is moot — destroying the sandbox
 removes the iframe, ending the Mini App's JS realm outright — but it means
 client-side cleanup-on-destruction is only exercised via the request timeout
 path, not a dedicated teardown signal.
+
+### Handshake failure
+
+`initOpenMiniBridge()` and `connectOpenMini()` **always settle**. Each takes a
+`connectTimeoutMs` (default 10,000 ms); if no acceptable `handshake-init`
+arrives within it, the promise rejects with a `BridgeError` carrying
+`HANDSHAKE_TIMEOUT`, and the message listener and timer are both removed. The
+host never sends this code — the guest synthesizes it, exactly as it does
+`REQUEST_TIMEOUT`.
+
+Individual validation failures are still **ignored rather than rejected**. A
+bootstrap message from the wrong `event.source`, with a port count other than
+one, or with a malformed or version-mismatched envelope is dropped silently
+and the wait continues. That is deliberate: a sandboxed document can receive
+`message` events from anywhere, so rejecting on the first bad one would let
+any sender break the handshake by posting junk first. The deadline is what
+makes failure observable; ignoring the junk is correct.
+
+A Mini App must therefore handle the rejection — `openmini init`'s scaffold
+does — or it has no bridge and no way to report why.
 
 ## Host-mediated `network.fetch` (Phase 7)
 
@@ -388,8 +430,13 @@ bridge does not have, and all remain deferred.
 `127.0.0.1` and `[::1]`, and only when the host embedder explicitly enables
 the development/test flag on `createNetworkHandlers` (default **off**, and
 off in any production build) — the gate is configuration, not hostname shape,
-so the "dev only" claim is actually enforced. For `https:` only the default
-port is allowed, since the manifest has no way to declare another.
+so the "dev only" claim is actually enforced.
+
+For `https:` only the default port is allowed, since the manifest has no way
+to declare another. The loopback exception is exempt from that rule: a dev
+server is almost never on port 80, so an explicit port **is** permitted for
+`localhost`, `127.0.0.1` and `[::1]`. Without the exemption the flag it sits
+behind would be useless.
 
 ## Security boundaries — explicitly NOT provided by Phase 4
 
@@ -445,5 +492,5 @@ port is allowed, since the manifest has no way to declare another.
   `bridge-storage-persistence` (real destroy → reload cycle, proving
   IndexedDB-backed persistence end-to-end), run against a real bridge-demo
   fixture that bundles the actual `@openmini/sdk` via esbuild (see
-  [`apps/host/scripts/build-bridge-demo-fixture.mjs`](../../apps/host/scripts/build-bridge-demo-fixture.mjs))
+  [`apps/host/scripts/build-bridge-demo-fixture.ts`](../../apps/host/scripts/build-bridge-demo-fixture.ts))
   rather than hand-rolled duplicate client logic.

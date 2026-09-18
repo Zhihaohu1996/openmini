@@ -62,7 +62,8 @@ examples/         minimal-manifest/ — a static example openmini.json
 
 ## Getting started
 
-Requires [Node.js](https://nodejs.org/) 20+ and [pnpm](https://pnpm.io/).
+Requires [Node.js](https://nodejs.org/) 24+ (the version in `.nvmrc`, which CI uses) and
+[pnpm](https://pnpm.io/).
 
 ```bash
 pnpm install     # install all workspace dependencies

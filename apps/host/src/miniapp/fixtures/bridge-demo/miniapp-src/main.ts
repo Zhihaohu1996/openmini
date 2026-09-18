@@ -1,6 +1,6 @@
 /**
  * The bridge-demo fixture's Mini App source — real @openmini/sdk usage,
- * bundled by esbuild (see ../../../../../scripts/build-bridge-demo-fixture.mjs)
+ * bundled by esbuild (see ../../../../../scripts/build-bridge-demo-fixture.ts)
  * into the fixture's single hashed inline script, rather than hand-rolled
  * duplicate client logic (contrast with hello-sandbox's bootstrapScript.ts).
  * Exercises storage/user round trips and exposes small test-only hooks the
@@ -23,6 +23,16 @@ function setText(id: string, text: string): void {
   }
 }
 
+/**
+ * How the host answered a forged request. `timed-out` means no reply arrived
+ * at all, which is a distinct outcome from an error reply and must not be
+ * silently reported as one.
+ */
+type ForgedReply =
+  | { kind: 'error'; code: string }
+  | { kind: 'success' }
+  | { kind: 'timed-out' };
+
 /** What a network.fetch attempt looked like from inside the sandbox. */
 type NetworkAttempt =
   | { ok: true; status: number; body: string }
@@ -30,7 +40,7 @@ type NetworkAttempt =
 
 interface BridgeDemoTestHooks {
   closeAndReport(): Promise<'resolved' | 'rejected'>;
-  sendForgedSession(): void;
+  sendForgedSession(): Promise<ForgedReply>;
   sendAfterClose(): void;
   setPersistedValue(key: string, value: string): Promise<void>;
   getPersistedValue(key: string): Promise<string | null>;
@@ -78,17 +88,50 @@ async function main(): Promise<void> {
         return 'rejected';
       }
     },
-    sendForgedSession(): void {
-      // Simulates a compromised/malicious Mini App forging a request with a
-      // spoofed sessionId — the host must drop this, not crash or respond.
-      port.postMessage({
-        channel: 'openmini',
-        version: 1,
-        sessionId: 'not-the-real-session-id',
-        type: 'request',
-        requestId: 'forged-1',
-        method: 'storage.get',
-        params: { key: 'greeting' },
+    // Simulates a compromised Mini App forging a request with a spoofed
+    // sessionId, and reports what came back. The host answers a session
+    // mismatch with SESSION_INVALID (docs/security/bridge.md) rather than
+    // staying silent, so the reply is captured here and the spec asserts it.
+    //
+    // `addEventListener` rather than reassigning `port.onmessage`: the bridge
+    // client owns that property, and both handler kinds fire, so this
+    // observes the traffic without taking the channel away from it.
+    sendForgedSession(): Promise<ForgedReply> {
+      return new Promise<ForgedReply>((resolve) => {
+        const finish = (reply: ForgedReply): void => {
+          clearTimeout(timer);
+          port.removeEventListener('message', onMessage);
+          resolve(reply);
+        };
+
+        const onMessage = (event: MessageEvent): void => {
+          const data = event.data as {
+            requestId?: string;
+            ok?: boolean;
+            error?: { code?: string };
+          };
+          if (data?.requestId !== 'forged-1') {
+            return;
+          }
+          finish(
+            data.ok === false
+              ? { kind: 'error', code: data.error?.code ?? 'UNKNOWN' }
+              : { kind: 'success' },
+          );
+        };
+
+        const timer = setTimeout(() => finish({ kind: 'timed-out' }), 3000);
+
+        port.addEventListener('message', onMessage);
+        port.postMessage({
+          channel: 'openmini',
+          version: 1,
+          sessionId: 'not-the-real-session-id',
+          type: 'request',
+          requestId: 'forged-1',
+          method: 'storage.get',
+          params: { key: 'greeting' },
+        });
       });
     },
     sendAfterClose(): void {

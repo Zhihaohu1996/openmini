@@ -14,9 +14,9 @@
  * Run via tsx (see package.json's build:fixtures) because it imports
  * TypeScript workspace packages directly.
  */
-import { assembleEntryDocument } from '@openmini/cli';
+import { assembleEntryDocument, buildPackage } from '@openmini/cli';
 import { build } from 'esbuild';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -48,68 +48,45 @@ const SHELL = `<!doctype html>
 `;
 
 /**
- * A second, deliberately *styled* package, written out as a real two-file
- * Mini App package under public/miniapps. The styled-package e2e loads it by
- * URL and asserts the browser actually applies the CSS — which only happens
- * if the style hash the builder computed matches, so this is the end-to-end
- * proof of Phase 8's inline-style support.
+ * The styled package the Phase 8 e2e loads by URL.
+ *
+ * This used to hand-roll the packaging here — its own esbuild config (missing
+ * `legalComments: 'none'`), a direct `assembleEntryDocument` call, and two
+ * hand-written files — which meant the e2e claiming to prove "a package built
+ * by @openmini/cli" never called `buildPackage` and so exercised neither
+ * manifest validation, nor entry-name derivation, nor the output `rm`, nor
+ * line-ending normalization.
+ *
+ * It is now a real authoring project (`fixtures/hello-styled/`) built by
+ * `buildPackage`, so the artifact the e2e runs against comes from the
+ * production path.
+ *
+ * The copy step exists because `--out` must resolve to a strict descendant of
+ * the project (Phase 8.5 R7 — `buildPackage` deletes that directory, so it may
+ * not point anywhere else). The package is therefore built inside the project
+ * and the two files it emits are copied to the served location. Copying the
+ * two files by name, rather than the directory, keeps the "exactly two files"
+ * contract true by construction.
  */
-const STYLED_SHELL = `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>hello-styled</title>
-<style>
-#styled-heading { color: rgb(16, 128, 64); }
-</style>
-</head>
-<body>
-<h1 id="styled-heading">styled</h1>
-<script></script>
-</body>
-</html>
-`;
-
-const STYLED_MANIFEST = `${JSON.stringify(
-  {
-    schemaVersion: 1,
-    id: 'com.openmini.hello-styled',
-    name: 'Hello Styled',
-    version: '0.1.0',
-    entry: 'index.html',
-    permissions: [],
-  },
-  null,
-  2,
-)}\n`;
-
-async function bundleScript(entry: string, workingDir: string): Promise<string> {
-  const result = await build({
-    entryPoints: [entry],
-    absWorkingDir: workingDir,
-    bundle: true,
-    write: false,
-    format: 'iife',
-    platform: 'browser',
-    target: 'es2020',
-    sourcemap: false,
-  });
-  const script = result.outputFiles[0]?.text;
-  if (script === undefined) {
-    throw new Error(`esbuild produced no output for ${entry}`);
-  }
-  return script;
-}
-
 async function buildStyledPackage(): Promise<void> {
-  const packageDir = join(scriptDir, '..', 'public', 'miniapps', 'hello-styled');
-  const script = await bundleScript(join(fixtureDir, 'miniapp-src', 'styled.ts'), fixtureDir);
-  const assembled = assembleEntryDocument({ html: STYLED_SHELL, script });
+  const projectDir = join(scriptDir, '..', 'src', 'miniapp', 'fixtures', 'hello-styled');
+  const servedDir = join(scriptDir, '..', 'public', 'miniapps', 'hello-styled');
 
-  mkdirSync(packageDir, { recursive: true });
-  writeFileSync(join(packageDir, 'index.html'), assembled.html, 'utf8');
-  writeFileSync(join(packageDir, 'openmini.json'), STYLED_MANIFEST, 'utf8');
-  console.log(`hello-styled package written to ${packageDir}`);
+  // The entry keeps its `styled.ts` name rather than the default `src/main.ts`,
+  // which also means this exercises the `--script` override.
+  const result = await buildPackage({
+    projectDir,
+    outDir: 'dist',
+    scriptPath: 'src/styled.ts',
+  });
+
+  rmSync(servedDir, { recursive: true, force: true });
+  mkdirSync(servedDir, { recursive: true });
+  for (const file of [result.manifestFile, result.entryFile]) {
+    copyFileSync(join(result.outDir, file), join(servedDir, file));
+  }
+
+  console.log(`hello-styled package built by buildPackage and served from ${servedDir}`);
 }
 
 async function main(): Promise<void> {

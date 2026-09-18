@@ -89,18 +89,28 @@ export function testApiPlugin(): Plugin {
     }
   }
 
+  /**
+   * The path portion of a request URL. `split` always yields at least one
+   * element, but `noUncheckedIndexedAccess` cannot know that, so the fallback
+   * is written out rather than asserted away — and it is the same `/` default
+   * already used for a missing `req.url`.
+   */
+  function pathOf(rawUrl: string | undefined): string {
+    return (rawUrl ?? '/').split('?')[0] ?? '/';
+  }
+
   return {
     name: 'openmini-test-api',
     apply: 'serve',
     configureServer(server) {
       server.middlewares.use('/test-api', (req, res, next) => {
-        if (!handle((req.url ?? '/').split('?')[0], res)) {
+        if (!handle(pathOf(req.url), res)) {
           next();
         }
       });
 
       const crossOrigin = createServer((req, res) => {
-        const url = (req.url ?? '/').split('?')[0];
+        const url = pathOf(req.url);
         const path = url.startsWith('/test-api') ? url.slice('/test-api'.length) : url;
         if (!handle(path || '/', res)) {
           res.statusCode = 404;

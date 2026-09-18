@@ -35,7 +35,17 @@ test('a CLI-built package boots and its hashed inline styles are applied', async
   await expect(heading).toHaveCSS('color', 'rgb(16, 128, 64)');
 });
 
-test('a CLI-built package still ships exactly the two files the loader reads', async ({ request }) => {
+/**
+ * Scoped to what an HTTP client can actually establish. It cannot enumerate
+ * the package directory, so it cannot prove "exactly two files" — that claim
+ * is asserted against the artifact on disk in
+ * apps/host/src/miniapp/fixtures/packageArtifact.test.ts. What this *can*
+ * prove is that both files the loader reads are served, and that the entry
+ * document carries exactly one builder-generated CSP with both hash sources.
+ */
+test('a CLI-built package serves both loader files, with a single builder-generated CSP', async ({
+  request,
+}) => {
   const manifest = await request.get('http://localhost:5173/miniapps/hello-styled/openmini.json');
   expect(manifest.status()).toBe(200);
   expect(await manifest.json()).toMatchObject({ id: 'com.openmini.hello-styled', entry: 'index.html' });

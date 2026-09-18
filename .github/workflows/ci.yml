@@ -20,10 +20,17 @@ jobs:
           node-version-file: '.nvmrc'
           cache: pnpm
 
+      # Order matters: lint -> build -> typecheck -> test.
+      #
+      # `build` must precede `test` because cli.binary.test.ts executes
+      # packages/cli/dist/cli.js; with the old ordering that suite could only
+      # ever fail. Putting `typecheck` before `test` also surfaces type errors
+      # in seconds rather than after a full run.
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
-      - run: pnpm test
       - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test
 
   e2e:
     runs-on: ubuntu-latest

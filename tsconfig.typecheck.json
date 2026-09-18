@@ -1,0 +1,42 @@
+{
+  // Type-checks the TypeScript that no per-package build tsconfig covers.
+  //
+  // Each package's tsconfig includes only what it emits, and `apps/host`'s
+  // covers only `src`. That leaves the e2e suite, the build/test configs, the
+  // host's fixture scripts and every package's test files checked by nothing:
+  // they are transpiled by vitest/tsx/playwright, which strip types without
+  // verifying them. A test that no longer compiles is a test that has stopped
+  // testing what it claims, and nothing would have said so.
+  //
+  // Deliberately separate from the per-package build configs, and `noEmit`.
+  // Adding test files to `packages/cli/tsconfig.json` would emit them into
+  // `dist` and worsen the packaging hygiene issue (A7) this phase is not
+  // otherwise addressing.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "jsx": "react-jsx",
+    "types": ["node"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "include": [
+    // The host's test files pull in `App.tsx`, which uses Vite-specific
+    // features (`?raw` imports, `import.meta.env`) that plain `tsc` does not
+    // know about. Including the host's own ambient declarations is how those
+    // get declared; a root-level `"types": ["vite/client"]` cannot resolve,
+    // because vite is a dependency of `apps/host`, not of the workspace root.
+    "apps/host/src/vite-env.d.ts",
+    "e2e/**/*.ts",
+    "playwright.config.ts",
+    "apps/host/vite.config.ts",
+    "apps/host/testApiPlugin.ts",
+    "apps/host/scripts/**/*.ts",
+    "apps/host/src/**/*.test.ts",
+    "apps/host/src/**/*.test.tsx",
+    "packages/*/src/**/*.test.ts",
+    "packages/*/src/**/*.test.tsx"
+  ]
+}

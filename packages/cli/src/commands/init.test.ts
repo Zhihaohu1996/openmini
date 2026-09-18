@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { validatePackage } from './validate.js';
-import { InitError, initProject } from './init.js';
+import { InitError, initProject, type InitResult } from './init.js';
 
 const created: string[] = [];
 
@@ -121,13 +121,16 @@ describe('initProject', () => {
       await writeFile(join(dir, 'openmini.json'), 'MINE', 'utf8');
       await writeFile(join(dir, 'src', 'main.ts'), 'MINE', 'utf8');
 
-      const error = await initProject({ projectDir: dir, id: 'com.example.ok' }).catch(
-        (e: unknown) => e as Error,
-      );
+      const outcome: InitResult | Error = await initProject({
+        projectDir: dir,
+        id: 'com.example.ok',
+      }).catch((e: unknown) => e as Error);
 
-      expect(error.message).toContain('openmini.json');
-      expect(error.message).toContain('src/main.ts');
-      expect(error.message).not.toContain('package.json');
+      expect(outcome).toBeInstanceOf(InitError);
+      const { message } = outcome as Error;
+      expect(message).toContain('openmini.json');
+      expect(message).toContain('src/main.ts');
+      expect(message).not.toContain('package.json');
     });
 
     it('--force overwrites all four destinations', async () => {

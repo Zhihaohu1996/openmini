@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PackageBuildError } from '../packageBuild.js';
 import { buildPackage } from './build.js';
 
@@ -230,6 +231,136 @@ describe('the CSP binds the bytes that ship', () => {
     await buildPackage({ projectDir: dir, outDir: join(dir, 'out') });
 
     expect(await readFile(join(dir, 'out', 'index.html'), 'utf8')).not.toContain('\r');
+  });
+});
+
+/**
+ * A drive letter with no volume mounted on it, or null if there is none (or
+ * we are not on Windows). Used so the different-drive test names a path that
+ * cannot exist, and therefore cannot be destroyed by a regression.
+ */
+const unusedDriveLetter: string | null =
+  process.platform === 'win32'
+    ? (['Q', 'R', 'V', 'W', 'X', 'Y', 'Z'].find((letter) => !existsSync(`${letter}:\\`)) ?? null)
+    : null;
+
+// R7 (Phase 8.5). `--out` resolved against the *current working directory*
+// while docs/cli.md described it as project-relative, and `buildPackage`
+// `rm -rf`s its output directory with no containment check at all. Together
+// that meant `openmini build ./proj --out .` deleted whatever directory the
+// shell happened to be in — for the documented usage, the project's own
+// source tree.
+describe('--out containment', () => {
+  // These tests feed `buildPackage` the exact inputs that used to make it
+  // delete the wrong directory, and `buildPackage` deletes its output
+  // directory for real. Against the *fixed* code that is safe, because
+  // rejection happens before the `rm`. Against a regression it is not: the
+  // pre-fix code resolved `--out ..` against `process.cwd()`, so running this
+  // suite from `packages/cli` deleted `packages/`. That is not hypothetical —
+  // it happened once while this fix was being verified.
+  //
+  // So the working directory is moved into a throwaway tree for the duration,
+  // and — this is the part that is easy to get wrong — it is moved *deep
+  // enough inside it*. Sitting directly in a `mkdtemp` directory is not
+  // enough: that directory's parent is the OS temp root, so a regression
+  // meeting `--out ..` would `rm -rf` the whole of it, taking every other
+  // process's temp files with it. Nesting a few levels down means the
+  // furthest any input here can climb is still inside the disposable root.
+  //
+  // The assertions are identical either way; only the blast radius of a
+  // regression changes. (Vitest isolates each test file in its own process,
+  // so the chdir cannot leak into another suite.)
+  const originalCwd = process.cwd();
+
+  beforeEach(async () => {
+    const root = await mkdtemp(join(tmpdir(), 'openmini-cwd-'));
+    projects.push(root);
+    const nested = join(root, 'a', 'b', 'c');
+    await mkdir(nested, { recursive: true });
+    process.chdir(nested);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+  });
+
+  it('resolves a relative --out against the project, not the process CWD', async () => {
+    const dir = await makeProject();
+    const result = await buildPackage({ projectDir: dir, outDir: 'dist' });
+
+    expect(result.outDir).toBe(join(dir, 'dist'));
+    expect((await readdir(join(dir, 'dist'))).sort()).toEqual(['index.html', 'openmini.json']);
+  });
+
+  it.each([
+    ['the project root itself', '.'],
+    ['a parent directory', '../outside'],
+    ['the immediate parent', '..'],
+    ['a path that climbs back out', 'dist/../../outside'],
+  ])('rejects %s (--out %j)', async (_label, outDir) => {
+    const dir = await makeProject();
+
+    await expect(buildPackage({ projectDir: dir, outDir })).rejects.toThrow(PackageBuildError);
+    // Rejected before any deletion: the project's own files are still here.
+    expect((await readdir(dir)).sort()).toEqual(['openmini.json', 'src']);
+    expect((await readdir(join(dir, 'src'))).sort()).toEqual(['index.html', 'main.ts']);
+  });
+
+  it('rejects an absolute path outside the project, leaving that path untouched', async () => {
+    const dir = await makeProject();
+    const outsider = await mkdtemp(join(tmpdir(), 'openmini-outsider-'));
+    projects.push(outsider);
+    await writeFile(join(outsider, 'precious.txt'), 'keep me', 'utf8');
+
+    await expect(buildPackage({ projectDir: dir, outDir: outsider })).rejects.toThrow(
+      PackageBuildError,
+    );
+    await expect(readFile(join(outsider, 'precious.txt'), 'utf8')).resolves.toBe('keep me');
+  });
+
+  it('rejects an ancestor of the project', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'openmini-parent-'));
+    projects.push(parent);
+    const dir = join(parent, 'proj');
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await writeFile(join(dir, 'openmini.json'), MANIFEST, 'utf8');
+    await writeFile(join(dir, 'src', 'index.html'), HTML, 'utf8');
+    await writeFile(join(dir, 'src', 'main.ts'), SCRIPT, 'utf8');
+    await writeFile(join(parent, 'sibling.txt'), 'keep me', 'utf8');
+
+    await expect(buildPackage({ projectDir: dir, outDir: parent })).rejects.toThrow(
+      PackageBuildError,
+    );
+    await expect(readFile(join(parent, 'sibling.txt'), 'utf8')).resolves.toBe('keep me');
+  });
+
+  // Deliberately an *unmounted* drive letter, not simply a different one: a
+  // regression here would `rm -rf` this path for real, and picking, say, D:\
+  // could destroy a developer's second disk. On a volume that does not exist,
+  // `rm(..., { force: true })` is a no-op. Skipped if every letter is in use.
+  it.runIf(unusedDriveLetter !== null)(
+    'rejects an absolute path on a different drive',
+    async () => {
+      const dir = await makeProject();
+      // `path.relative` returns an absolute path when no relative route
+      // exists between two drives, which is the case this catches.
+      const outDir = `${unusedDriveLetter as string}:\\out`;
+
+      await expect(buildPackage({ projectDir: dir, outDir })).rejects.toThrow(PackageBuildError);
+    },
+  );
+
+  it('accepts a nested descendant, and a name that merely starts with dots', async () => {
+    const dir = await makeProject();
+
+    await expect(buildPackage({ projectDir: dir, outDir: 'build/pkg' })).resolves.toMatchObject({
+      outDir: join(dir, 'build', 'pkg'),
+    });
+    // `..cache` is a legitimate descendant; a bare `startsWith('..')` test
+    // would reject it along with genuine ancestors.
+    await expect(buildPackage({ projectDir: dir, outDir: '..cache' })).resolves.toMatchObject({
+      outDir: join(dir, '..cache'),
+    });
   });
 });
 

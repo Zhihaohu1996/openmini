@@ -1,16 +1,31 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { initProject } from './init.js';
+import { validatePackage } from './validate.js';
+import { InitError, initProject } from './init.js';
 
 const created: string[] = [];
 
-async function scaffold(id = 'com.example.hello'): Promise<string> {
+async function tempDir(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'openmini-init-'));
   created.push(dir);
+  return dir;
+}
+
+async function scaffold(id = 'com.example.hello'): Promise<string> {
+  const dir = await tempDir();
   await initProject({ projectDir: dir, id });
   return dir;
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 afterEach(async () => {
@@ -50,5 +65,94 @@ describe('initProject', () => {
     expect(catchLine).toBeGreaterThan(connectLine);
     // The catch must actually report something, not swallow the failure.
     expect(main.slice(catchLine)).toMatch(/status\.textContent\s*=/);
+  });
+
+  // R5 (Phase 8.5). `init` never validated `--id`, so it cheerfully produced
+  // projects that `openmini validate` then rejected — two commands in the
+  // same binary disagreeing about what a valid manifest is.
+  describe('produces only manifests validate accepts', () => {
+    it.each(['NOPE', 'com..example', 'com.example.', '9lives.app', '', 'com example'])(
+      'rejects the invalid id %j and writes nothing',
+      async (id) => {
+        const dir = await tempDir();
+
+        await expect(initProject({ projectDir: dir, id })).rejects.toThrow(InitError);
+        expect(await readdir(dir)).toEqual([]);
+      },
+    );
+
+    it('feeds its own output straight to validatePackage, which accepts it', async () => {
+      const dir = await scaffold('com.example.ok');
+      await expect(validatePackage(dir)).resolves.toMatchObject({ ok: true });
+    });
+  });
+
+  // R5, second half: the scaffold used to be four sequential writes with no
+  // existence check, so a conflict on the *last* file left the first three
+  // already overwritten — and `openmini.json` and `package.json` are exactly
+  // the two a user is most likely to have authored themselves.
+  describe('without --force, a conflict leaves the filesystem unchanged', () => {
+    it('refuses when only the last-written file exists, and writes none of the others', async () => {
+      const dir = await tempDir();
+      await mkdir(join(dir, 'src'), { recursive: true });
+      await writeFile(join(dir, 'src', 'main.ts'), 'MINE', 'utf8');
+
+      await expect(initProject({ projectDir: dir, id: 'com.example.ok' })).rejects.toThrow(InitError);
+
+      expect(await exists(join(dir, 'openmini.json'))).toBe(false);
+      expect(await exists(join(dir, 'package.json'))).toBe(false);
+      expect(await exists(join(dir, 'src', 'index.html'))).toBe(false);
+      expect(await readFile(join(dir, 'src', 'main.ts'), 'utf8')).toBe('MINE');
+    });
+
+    it('does not create src/ as a side effect of a refused run', async () => {
+      const dir = await tempDir();
+      await writeFile(join(dir, 'openmini.json'), 'MINE', 'utf8');
+
+      await expect(initProject({ projectDir: dir, id: 'com.example.ok' })).rejects.toThrow(InitError);
+
+      expect(await readdir(dir)).toEqual(['openmini.json']);
+      expect(await readFile(join(dir, 'openmini.json'), 'utf8')).toBe('MINE');
+    });
+
+    it('reports every conflict at once rather than one run at a time', async () => {
+      const dir = await tempDir();
+      await mkdir(join(dir, 'src'), { recursive: true });
+      await writeFile(join(dir, 'openmini.json'), 'MINE', 'utf8');
+      await writeFile(join(dir, 'src', 'main.ts'), 'MINE', 'utf8');
+
+      const error = await initProject({ projectDir: dir, id: 'com.example.ok' }).catch(
+        (e: unknown) => e as Error,
+      );
+
+      expect(error.message).toContain('openmini.json');
+      expect(error.message).toContain('src/main.ts');
+      expect(error.message).not.toContain('package.json');
+    });
+
+    it('--force overwrites all four destinations', async () => {
+      const dir = await tempDir();
+      await mkdir(join(dir, 'src'), { recursive: true });
+      await writeFile(join(dir, 'openmini.json'), 'MINE', 'utf8');
+      await writeFile(join(dir, 'package.json'), 'MINE', 'utf8');
+      await writeFile(join(dir, 'src', 'index.html'), 'MINE', 'utf8');
+      await writeFile(join(dir, 'src', 'main.ts'), 'MINE', 'utf8');
+
+      await initProject({ projectDir: dir, id: 'com.example.ok', force: true });
+
+      for (const file of ['openmini.json', 'package.json', 'src/index.html', 'src/main.ts']) {
+        await expect(readFile(join(dir, ...file.split('/')), 'utf8')).resolves.not.toBe('MINE');
+      }
+    });
+
+    it('validates the id before the conflict preflight, so a bad id writes nothing either', async () => {
+      const dir = await tempDir();
+      await writeFile(join(dir, 'openmini.json'), 'MINE', 'utf8');
+
+      await expect(initProject({ projectDir: dir, id: 'NOPE', force: true })).rejects.toThrow(
+        InitError,
+      );
+      expect(await readFile(join(dir, 'openmini.json'), 'utf8')).toBe('MINE');
+    });
   });
 });

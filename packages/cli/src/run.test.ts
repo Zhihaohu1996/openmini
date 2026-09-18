@@ -51,6 +51,52 @@ describe('exit codes', () => {
   });
 });
 
+// R8 (Phase 8.5). `run`'s docstring promised these exit codes; three of the
+// four commands did not deliver them, relying on cli.ts's last-resort catch
+// instead. These pin the contract at the level that claims it.
+describe('command-line contract', () => {
+  it('honours --version only as the first token', async () => {
+    const dir = await tempDir('openmini-run-');
+    // `argv.includes('-v')` used to match this flag *value*, print the
+    // version and exit 0 — scaffolding nothing while reporting success.
+    expect(await run(['init', dir, '--id', 'com.example.ok', '--name', '-v'])).toBe(0);
+
+    expect(logs.join('\n')).not.toMatch(/^\d+\.\d+\.\d+$/m);
+    expect((await readdir(dir)).sort()).toEqual(['openmini.json', 'package.json', 'src']);
+  });
+
+  it.each(['build', 'init', 'validate', 'dev'])('prints usage for %s --help and exits 0', async (command) => {
+    // `build --help` used to throw "flag --help requires a value", because
+    // --help was parsed as a flag expecting a value like any other.
+    expect(await run([command, '--help'])).toBe(0);
+    expect(logs.join('\n')).toContain(`openmini ${command}`);
+  });
+
+  it('accepts the -h alias', async () => {
+    expect(await run(['build', '-h'])).toBe(0);
+  });
+
+  it.each([
+    ['build', '--ouput'],
+    ['init', '--forse'],
+    ['dev', '--host'],
+    ['validate', '--strict'],
+  ])('rejects the unknown flag %s %s', async (command, flag) => {
+    expect(await run([command, flag, 'x'])).toBe(1);
+    expect(errors.join('\n')).toContain('unknown flag');
+  });
+
+  it.each(['abc', '0', '65536', '80.5', '-1', ''])('rejects --port %j', async (value) => {
+    expect(await run(['dev', '--port', value])).toBe(1);
+    expect(errors.join('\n')).toContain('--port must be an integer');
+  });
+
+  it('returns 1 from run() itself when a flag has no value', async () => {
+    expect(await run(['build', '.', '--out'])).toBe(1);
+    expect(errors.join('\n')).toContain('requires a value');
+  });
+});
+
 describe('validate command', () => {
   it('exits 0 and reports the app for a valid manifest', async () => {
     const dir = await tempDir('openmini-run-');
@@ -108,14 +154,23 @@ describe('init command', () => {
 });
 
 describe('build command', () => {
-  it('exits non-zero when the project is invalid', async () => {
+  it('returns 1 from run() when the project is invalid, rather than throwing', async () => {
     const dir = await tempDir('openmini-run-');
     await writeFile(join(dir, 'openmini.json'), '{"schemaVersion":1,"id":"nope"}', 'utf8');
 
-    await expect(run(['build', dir, '--out', join(dir, 'out')])).rejects.toThrow();
+    // Previously this propagated a PackageBuildError out of `run`, so the
+    // non-zero exit came from cli.ts's catch-all rather than from the exit
+    // code `run` documents itself as returning.
+    expect(await run(['build', dir, '--out', 'out'])).toBe(1);
+    expect(errors.join('\n')).toContain('Invalid OpenMini manifest');
   });
 
-  it('rejects a flag with no value', async () => {
-    await expect(run(['build', '.', '--out'])).rejects.toThrow(/requires a value/);
+  it('returns 1 and reports the reason for an --out outside the project', async () => {
+    const dir = await tempDir('openmini-run-');
+    await run(['init', dir, '--id', 'com.example.ok']);
+    errors = [];
+
+    expect(await run(['build', dir, '--out', '../escape'])).toBe(1);
+    expect(errors.join('\n')).toContain('--out must be a directory inside the project');
   });
 });

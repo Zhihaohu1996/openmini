@@ -1,13 +1,17 @@
 import { formatManifestIssues, parseManifest } from '@openmini/manifest';
 import { build as esbuild } from 'esbuild';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { PackageBuildError, assembleEntryDocument } from '../packageBuild.js';
 
 export interface BuildOptions {
   /** Authoring project root — the directory containing openmini.json. */
   projectDir: string;
-  /** Output package root. Receives exactly the files the loader consumes. */
+  /**
+   * Output package root, resolved **relative to `projectDir`** (see
+   * docs/cli.md) and required to be a strict descendant of it. Receives
+   * exactly the files the loader consumes.
+   */
   outDir: string;
   /** Author's HTML shell, relative to projectDir. */
   htmlPath?: string;
@@ -27,6 +31,41 @@ const DEFAULT_SCRIPT_PATH = 'src/main.ts';
 const MANIFEST_FILENAME = 'openmini.json';
 
 /**
+ * Resolves `--out` against the project and refuses anything that is not a
+ * strict descendant of it. `buildPackage` deletes this directory outright, so
+ * getting it wrong means deleting something the user did not nominate — with
+ * `--out .` that is the project's own source tree.
+ *
+ * Uses `path.relative` rather than string prefixing: it normalizes
+ * separators, honours Windows case-insensitivity, and returns an absolute
+ * path when no relative route exists (a different drive letter), which is
+ * exactly the outside-the-project case.
+ *
+ * Stated bound: `resolve` does not resolve symlinks, so an `outDir` that is a
+ * symlink pointing outside the project is not caught. This matches the
+ * deliberate no-symlink-resolution stance recorded in the runtime's
+ * containment module; closing it would need `realpath` on a path whose parent
+ * may not exist yet.
+ */
+function resolveOutDir(projectDir: string, rawOutDir: string): string {
+  const outDir = resolve(projectDir, rawOutDir);
+  const rel = relative(projectDir, outDir);
+
+  // `rel === ''` means outDir IS the project root; an absolute `rel` means a
+  // different Windows drive. The `..` test is written against a whole path
+  // segment rather than as `startsWith('..')`, so a legitimately-named
+  // descendant such as `..cache` is not swept up with genuine ancestors.
+  const escapes = rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  if (rel === '' || escapes) {
+    throw new PackageBuildError(
+      `--out must be a directory inside the project (got "${rawOutDir}", which resolves to ${outDir}; project is ${projectDir})`,
+    );
+  }
+
+  return outDir;
+}
+
+/**
  * Bundles an authoring project into a canonical Mini App package.
  *
  * The output contains only what the loader actually reads — `openmini.json`
@@ -41,7 +80,9 @@ const MANIFEST_FILENAME = 'openmini.json';
  */
 export async function buildPackage(options: BuildOptions): Promise<BuildResult> {
   const projectDir = resolve(options.projectDir);
-  const outDir = resolve(options.outDir);
+  // Checked first, before the manifest is even read: nothing about this build
+  // should begin if its output directory is one we must not delete.
+  const outDir = resolveOutDir(projectDir, options.outDir);
   const htmlPath = options.htmlPath ?? DEFAULT_HTML_PATH;
   const scriptPath = options.scriptPath ?? DEFAULT_SCRIPT_PATH;
 

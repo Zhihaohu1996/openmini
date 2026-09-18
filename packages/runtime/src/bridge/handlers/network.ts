@@ -5,6 +5,7 @@ import {
   type NetworkFetchRequest,
   type NetworkFetchResponse,
 } from '@openmini/shared';
+import { BoundedFetchError, fetchBounded } from '../../http/boundedFetch';
 import { BridgeInvalidParamsError, BridgeNetworkError, BridgePermissionDeniedError } from '../errors';
 import type { BridgeHandlerContext, BridgeMethodHandler } from '../types';
 
@@ -190,55 +191,26 @@ function collectResponseHeaders(response: Response): Record<string, string> {
 }
 
 /**
- * Reads the body while counting actual bytes, aborting the moment the cap is
- * passed. Deliberately ignores `Content-Length`: a missing or dishonest
- * header must not be able to raise the ceiling.
+ * Translates the shared helper's `reason` discriminant into this handler's
+ * error vocabulary. The message strings are this layer's, not the helper's,
+ * so the wire-visible text is unchanged by the extraction.
  */
-async function readBoundedBody(
-  response: Response,
+function toBridgeNetworkError(
+  error: BoundedFetchError,
+  timeoutMs: number,
   maxResponseBodyBytes: number,
-  onOverflow: () => void,
-): Promise<string> {
-  const body = response.body;
-  if (!body || typeof body.getReader !== 'function') {
-    // `body` is null for a 204/304 and for a HEAD response, so this is a
-    // normal path, not just a guard: there is nothing to stream and
-    // `text()` yields ''. It also covers any environment lacking streaming
-    // bodies, where the cap can only be checked after the fact.
-    const text = await response.text();
-    if (byteLength(text) > maxResponseBodyBytes) {
-      onOverflow();
-      throw new BridgeNetworkError(
+): BridgeNetworkError {
+  switch (error.reason) {
+    case 'timeout':
+      return new BridgeNetworkError('NETWORK_TIMEOUT', `request exceeded the ${timeoutMs}ms timeout`);
+    case 'too-large':
+      return new BridgeNetworkError(
         'NETWORK_RESPONSE_TOO_LARGE',
         `response body exceeds the ${maxResponseBodyBytes}-byte limit`,
       );
-    }
-    return text;
+    default:
+      return new BridgeNetworkError('NETWORK_REQUEST_FAILED', 'network request failed');
   }
-
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let received = 0;
-  let text = '';
-
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-    received += value.byteLength;
-    if (received > maxResponseBodyBytes) {
-      onOverflow();
-      await reader.cancel().catch(() => undefined);
-      throw new BridgeNetworkError(
-        'NETWORK_RESPONSE_TOO_LARGE',
-        `response body exceeds the ${maxResponseBodyBytes}-byte limit`,
-      );
-    }
-    text += decoder.decode(value, { stream: true });
-  }
-
-  return text + decoder.decode();
 }
 
 /**
@@ -272,43 +244,25 @@ export function createNetworkHandlers(options: NetworkHandlerOptions = {}): Reco
       const method = request.method ?? 'GET';
       const body = resolveBody(method, request.body, maxRequestBodyBytes);
 
-      const controller = new AbortController();
-      // The signal alone can't say why we aborted, and the two reasons map
-      // to different errors, so the reason is tracked explicitly.
-      let abortReason: 'timeout' | 'response-too-large' | null = null;
-      const timer = setTimeout(() => {
-        abortReason = 'timeout';
-        controller.abort();
-      }, timeoutMs);
-
-      const doFetch = fetchImpl ?? fetch;
-
+      // The bounded-fetch lifecycle (one abort signal covering fetch *and*
+      // body read, per-chunk byte counting, `Content-Length` ignored) lives
+      // in ../../http/boundedFetch so the package-load path uses the same
+      // logic rather than a second copy of it. Everything policy-shaped stays
+      // here: `credentials`, `redirect`, `referrerPolicy` and the allowlist
+      // above are this handler's concerns.
       try {
-        let response: Response;
-        try {
-          response = await doFetch(url.toString(), {
+        const { response, body: responseBody } = await fetchBounded(
+          url.toString(),
+          {
             method,
             headers: request.headers ?? {},
             ...(body === undefined ? {} : { body }),
             credentials: 'omit',
             redirect: 'error',
             referrerPolicy: 'no-referrer',
-            signal: controller.signal,
-          });
-        } catch {
-          // A browser network error is a bare TypeError with no cause
-          // attached, by design — a blocked redirect, a CORS rejection and a
-          // DNS/TLS failure are genuinely indistinguishable here, so this
-          // must not guess between them.
-          throw abortReason === 'timeout'
-            ? new BridgeNetworkError('NETWORK_TIMEOUT', `request exceeded the ${timeoutMs}ms timeout`)
-            : new BridgeNetworkError('NETWORK_REQUEST_FAILED', 'network request failed');
-        }
-
-        const responseBody = await readBoundedBody(response, maxResponseBodyBytes, () => {
-          abortReason = 'response-too-large';
-          controller.abort();
-        });
+          },
+          { timeoutMs, maxBodyBytes: maxResponseBodyBytes, fetchImpl },
+        );
 
         return {
           status: response.status,
@@ -317,15 +271,10 @@ export function createNetworkHandlers(options: NetworkHandlerOptions = {}): Reco
           body: responseBody,
         };
       } catch (error) {
-        if (error instanceof BridgeNetworkError) {
-          throw error;
+        if (error instanceof BoundedFetchError) {
+          throw toBridgeNetworkError(error, timeoutMs, maxResponseBodyBytes);
         }
-        // A failure *during* the body read, e.g. the timeout firing mid-stream.
-        throw abortReason === 'timeout'
-          ? new BridgeNetworkError('NETWORK_TIMEOUT', `request exceeded the ${timeoutMs}ms timeout`)
-          : new BridgeNetworkError('NETWORK_REQUEST_FAILED', 'network request failed');
-      } finally {
-        clearTimeout(timer);
+        throw new BridgeNetworkError('NETWORK_REQUEST_FAILED', 'network request failed');
       }
     },
   };

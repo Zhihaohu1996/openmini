@@ -32,6 +32,19 @@ export interface AssembleResult {
 
 export class PackageBuildError extends Error {}
 
+/**
+ * CSP hashes only.
+ *
+ * `@openmini/shared` exports an isomorphic `sha256Base64` used wherever a
+ * digest has to agree across the CLI and the runtime (package integrity).
+ * This one deliberately stays separate and synchronous: WebCrypto's digest is
+ * async, and making it async here would make `assembleEntryDocument` async
+ * too, rippling through the CSP and determinism suites. These hashes never
+ * cross the package boundary — they are compared only against the same
+ * document that carries them — so a second implementation costs nothing in
+ * correctness. Note the differing output shape: this returns bare base64,
+ * while the shared helper returns the `sha256-` prefixed source form.
+ */
 function sha256Base64(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('base64');
 }

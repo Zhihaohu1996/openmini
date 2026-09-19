@@ -1,19 +1,6 @@
 import { buildMiniAppCsp } from '@openmini/runtime';
+import { sha256Base64Utf8 } from '@openmini/shared';
 import { HELLO_SANDBOX_BOOTSTRAP_SCRIPT } from './bootstrapScript';
-
-function bufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-}
-
-async function sha256Base64(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return bufferToBase64(digest);
-}
 
 /**
  * Builds the hello-sandbox fixture's `index.html` at call time, computing
@@ -22,8 +9,8 @@ async function sha256Base64(text: string): Promise<string> {
  * declared hash and the shipped script can never silently drift apart.
  */
 export async function buildHelloSandboxHtml(): Promise<string> {
-  const hash = await sha256Base64(HELLO_SANDBOX_BOOTSTRAP_SCRIPT);
-  const csp = buildMiniAppCsp(`sha256-${hash}`);
+  const hash = await sha256Base64Utf8(HELLO_SANDBOX_BOOTSTRAP_SCRIPT);
+  const csp = buildMiniAppCsp(hash);
 
   return `<!doctype html>
 <html>

@@ -1,23 +1,10 @@
 import { buildMiniAppCsp } from '@openmini/runtime';
+import { sha256Base64Utf8 } from '@openmini/shared';
 import { SELF_NAVIGATE_BOOTSTRAP_SCRIPT } from './bootstrapScript';
 
-function bufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-}
-
-async function sha256Base64(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return bufferToBase64(digest);
-}
-
 export async function buildSelfNavigateHtml(): Promise<string> {
-  const hash = await sha256Base64(SELF_NAVIGATE_BOOTSTRAP_SCRIPT);
-  const csp = buildMiniAppCsp(`sha256-${hash}`);
+  const hash = await sha256Base64Utf8(SELF_NAVIGATE_BOOTSTRAP_SCRIPT);
+  const csp = buildMiniAppCsp(hash);
 
   return `<!doctype html>
 <html>

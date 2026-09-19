@@ -11,6 +11,16 @@ export { generateRandomId } from './id';
 export { buildMiniAppCsp, MINI_APP_BASE_CSP_DIRECTIVES, MINI_APP_SANDBOX_ATTRIBUTE } from './csp';
 
 export {
+  base64ToBytes,
+  base64UrlEncode,
+  bytesToBase64,
+  digestsEqual,
+  sha256,
+  sha256Base64,
+  sha256Base64Utf8,
+} from './crypto';
+
+export {
   OPENMINI_BRIDGE_CHANNEL,
   OPENMINI_BRIDGE_VERSION,
   BRIDGE_NAMESPACES,

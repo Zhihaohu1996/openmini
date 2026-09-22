@@ -6,5 +6,9 @@
 - [`@openmini/cli` — packaging toolchain — Phase 8 (+ Phase 9 signing)](cli.md)
 - [Package integrity and identity — Phase 9](security/integrity.md)
 
+Phase records (history, not living documentation):
+
+- [Phase 9 — package integrity and identity](plans/phase-9.md)
+
 This directory will grow to hold the rest of OpenMini's developer documentation
 (architecture, SDK reference) as those pieces are built in later phases.

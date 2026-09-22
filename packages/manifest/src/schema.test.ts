@@ -108,6 +108,20 @@ const fixtures: Array<{ name: string; manifest: unknown; expectValid: boolean }>
     },
     expectValid: false,
   },
+  {
+    name: 'id at exactly the maximum length',
+    manifest: { ...VALID_MANIFEST, id: `com.${'a'.repeat(251)}` },
+    expectValid: true,
+  },
+  {
+    // The bound has to exist in both the JSON Schema and the TS validator.
+    // This fixture is what proves the two were changed together: it runs
+    // the same manifest through Ajv and through validateManifest and
+    // requires them to agree.
+    name: 'id one character over the maximum length',
+    manifest: { ...VALID_MANIFEST, id: `com.${'a'.repeat(252)}` },
+    expectValid: false,
+  },
 ];
 
 describe('openmini.schema.json conformance', () => {

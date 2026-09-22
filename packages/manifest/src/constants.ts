@@ -18,6 +18,21 @@ export const NETWORK_DOMAIN_IPV6_PATTERN = /^\[[0-9a-f:]+\]$/;
 export const MAX_NAME_LENGTH = 100;
 
 /**
+ * Upper bound on `id`, which `ID_PATTERN` alone does not impose — the
+ * pattern is happy with a megabyte of dot-separated segments.
+ *
+ * `name` has been bounded since Phase 2 and `id` has not, which is the wrong
+ * way round: `name` is a label, while `id` is used as a key. It scopes
+ * storage, it is bound into a package signature, and it appears in error
+ * text and logs. An unbounded value in any of those is a way to consume
+ * space or flood a log with one manifest field.
+ *
+ * 255 is chosen to match `name`'s style of bound — generous enough that no
+ * plausible reverse-domain id comes near it, small enough to be a bound.
+ */
+export const MAX_ID_LENGTH = 255;
+
+/**
  * Lowercase reverse-domain-style id: at least two dot-separated segments,
  * each starting with a lowercase letter, made of lowercase letters/digits/
  * hyphens, and never ending with a hyphen.

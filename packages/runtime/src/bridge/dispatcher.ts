@@ -7,7 +7,7 @@ import {
   type BridgeErrorCode,
   type BridgeResponseEnvelope,
 } from '@openmini/shared';
-import type { MiniAppSandbox } from '../sandbox/types';
+import type { MiniAppSandbox, PackageProvenance } from '../sandbox/types';
 import { computePermittedNamespaces, getMethodNamespace, isNamespaceKnown } from './capabilities';
 import {
   BridgeInvalidParamsError,
@@ -34,6 +34,13 @@ export interface BridgeDispatcherOptions {
   manifest: OpenMiniManifest;
   sandbox: MiniAppSandbox;
   port: MessagePort;
+  /**
+   * Provenance of the loaded package, passed straight through to every
+   * handler's context. Omitted for a dispatcher that is not serving a loaded
+   * package; see `BridgeHandlerContext.provenance` for why `undefined` and
+   * an unverified identity are kept distinct.
+   */
+  provenance?: PackageProvenance;
   /** Defaults to the Phase 4 stub storage/navigation/user handlers. */
   handlers?: BridgeHandlerRegistry;
   /** Defaults to 32. */
@@ -61,6 +68,7 @@ export function createBridgeDispatcher(options: BridgeDispatcherOptions): Bridge
     manifest,
     sandbox,
     port,
+    provenance,
     handlers = createDefaultHandlers(),
     maxInFlightRequests = DEFAULT_MAX_IN_FLIGHT_REQUESTS,
     closeAckTimeoutMs = DEFAULT_CLOSE_ACK_TIMEOUT_MS,
@@ -213,7 +221,7 @@ export function createBridgeDispatcher(options: BridgeDispatcherOptions): Bridge
     inFlight += 1;
     const requestId = data.requestId;
     Promise.resolve()
-      .then(() => handler(data.params, { sandbox, manifest }))
+      .then(() => handler(data.params, { sandbox, manifest, provenance }))
       .then(
         (result) => {
           inFlight -= 1;

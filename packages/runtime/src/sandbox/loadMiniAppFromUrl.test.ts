@@ -54,6 +54,32 @@ describe('loadMiniAppFromUrl', () => {
     expect(fetchedUrl(fetchMock, 0)).toBe('http://localhost:5173/miniapps/hello-remote/index.html');
   });
 
+  it('reports the normalized base URL as provenance, not the string that was passed in', async () => {
+    // The caller's URL has no trailing slash; the provider resolves resources
+    // against the normalized form. Provenance must record the same normalized
+    // value, or a later origin comparison would be made against a URL that
+    // resolves differently from the one actually fetched from.
+    global.fetch = mockFetchOk(MANIFEST_JSON) as unknown as typeof fetch;
+
+    const result = await loadMiniAppFromUrl('http://localhost:5173/miniapps/hello-remote');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.provenance.baseUrl).toBe('http://localhost:5173/miniapps/hello-remote/');
+  });
+
+  it('reports an unverified identity, because nothing verifies one yet', async () => {
+    // Fail-honest rather than fail-closed at this layer: the loader's job is
+    // to report what it established, and it established no identity. The
+    // reason is `unsigned` and not `untrusted-key` because no signature
+    // format exists for a package to carry.
+    global.fetch = mockFetchOk(MANIFEST_JSON) as unknown as typeof fetch;
+
+    const result = await loadMiniAppFromUrl('http://localhost:5173/miniapps/hello-remote');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.provenance.identity).toEqual({ verified: false, reason: 'unsigned' });
+  });
+
   it('requests the manifest with an explicit Accept: application/json header', async () => {
     // Without this header, SPA-fallback middleware (Vite dev server, many
     // static hosts) answers an unmatched path with index.html + 200 instead

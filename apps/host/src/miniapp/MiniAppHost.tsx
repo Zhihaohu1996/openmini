@@ -8,12 +8,25 @@ import {
   createUserHandlers,
   gateManifest,
 } from '@openmini/runtime';
-import type { MiniAppResourceProvider, MiniAppSandbox, SandboxState } from '@openmini/runtime';
+import type {
+  MiniAppResourceProvider,
+  MiniAppSandbox,
+  PackageProvenance,
+  SandboxState,
+} from '@openmini/runtime';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 export interface MiniAppHostProps {
   manifestJson: string;
   resourceProvider: MiniAppResourceProvider;
+  /**
+   * Set only by the remote package-loading path, which gets it from
+   * `loadMiniAppFromUrl`. The fixture/scenario path leaves it `undefined`
+   * rather than supplying an unverified-looking stand-in: a fixture did not
+   * fail a check, it was never subject to one. See
+   * `SandboxOptions.provenance`.
+   */
+  provenance?: PackageProvenance;
 }
 
 /**
@@ -39,7 +52,7 @@ type DisplayState = SandboxState | 'idle';
  * intentionally thin — it owns no RPC/capability logic, only the sandbox's
  * lifecycle and the DOM container it renders into. See docs/security/sandbox.md.
  */
-export function MiniAppHost({ manifestJson, resourceProvider }: MiniAppHostProps) {
+export function MiniAppHost({ manifestJson, resourceProvider, provenance }: MiniAppHostProps) {
   const gateResult = useMemo(() => gateManifest(manifestJson), [manifestJson]);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sandboxRef = useRef<MiniAppSandbox | null>(null);
@@ -69,12 +82,14 @@ export function MiniAppHost({ manifestJson, resourceProvider }: MiniAppHostProps
     const sandbox = createMiniAppSandbox({
       manifest,
       resourceProvider,
+      provenance,
       container: containerRef.current,
       onBridgeReady: (port) => {
         createBridgeDispatcher({
           manifest,
           sandbox,
           port,
+          provenance,
           handlers: {
             storage: createStorageHandlers({ provider: createIndexedDbStorageProvider() }),
             navigation: createNavigationHandlers(),

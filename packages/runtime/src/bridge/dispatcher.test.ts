@@ -5,7 +5,7 @@ import {
   type BridgeResponseEnvelope,
 } from '@openmini/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { MiniAppSandbox, SandboxStateListener } from '../sandbox/types';
+import type { MiniAppSandbox, PackageProvenance, SandboxStateListener } from '../sandbox/types';
 import { createBridgeDispatcher } from './dispatcher';
 import { BridgeNetworkError, BridgePermissionDeniedError } from './errors';
 import type { BridgeHandlerRegistry } from './types';
@@ -109,6 +109,81 @@ describe('createBridgeDispatcher', () => {
 
     expect(received[0]).toMatchObject({ ok: true, result: null });
     expect(seenManifestId).toBe(manifest.id);
+  });
+
+  /**
+   * The handler context is the far end of the provenance plumbing: storage
+   * scopes its keys by the self-asserted `manifest.id`, so the handler layer
+   * is where "was that id ever verified?" eventually has to be answerable.
+   * Nothing consumes it yet, so these two pin only that it arrives intact
+   * and that an absent load stays absent.
+   */
+  it('passes provenance through to the handler context', async () => {
+    const { sandbox } = createFakeSandbox();
+    const channel = new MessageChannel();
+    const received = collectResponses(channel.port2);
+    const provenance: PackageProvenance = {
+      baseUrl: 'https://cdn.example.com/apps/demo/',
+      identity: { verified: false, reason: 'unsigned' },
+    };
+    let seen: PackageProvenance | undefined;
+    const handlers: BridgeHandlerRegistry = {
+      storage: {
+        get: (_params, ctx) => {
+          seen = ctx.provenance;
+          return null;
+        },
+      },
+    };
+
+    createBridgeDispatcher({
+      manifest: makeManifest(['storage']),
+      sandbox,
+      port: channel.port1,
+      provenance,
+      handlers,
+    });
+    channel.port2.postMessage(request());
+    await tick(2);
+
+    expect(received[0]).toMatchObject({ ok: true, result: null });
+    expect(seen).toEqual(provenance);
+  });
+
+  it('leaves handler-context provenance undefined when no package was loaded', async () => {
+    // `undefined` must not be backfilled with a synthetic unverified value:
+    // "no package load happened" and "a package loaded and failed its check"
+    // are different facts, and only the second is a package's own doing.
+    const { sandbox } = createFakeSandbox();
+    const channel = new MessageChannel();
+    collectResponses(channel.port2);
+    let called = false;
+    let seen: PackageProvenance | undefined = {
+      baseUrl: 'https://sentinel.invalid/',
+      identity: { verified: false, reason: 'unsigned' },
+    };
+    const handlers: BridgeHandlerRegistry = {
+      storage: {
+        get: (_params, ctx) => {
+          called = true;
+          seen = ctx.provenance;
+          return null;
+        },
+      },
+    };
+
+    createBridgeDispatcher({
+      manifest: makeManifest(['storage']),
+      sandbox,
+      port: channel.port1,
+      handlers,
+    });
+    channel.port2.postMessage(request());
+    await tick(2);
+
+    // The sentinel above means an unrun handler cannot pass this by default.
+    expect(called).toBe(true);
+    expect(seen).toBeUndefined();
   });
 
   it('denies a call to a namespace absent from the manifest permissions', async () => {

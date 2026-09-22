@@ -6,10 +6,21 @@ import {
   PACKAGE_FETCH_TIMEOUT_MS,
   PACKAGE_MAX_RESOURCE_BYTES,
 } from './fetchResourceProvider';
-import type { MiniAppResourceProvider } from './types';
+import type { MiniAppResourceProvider, PackageProvenance } from './types';
 
 export type LoadMiniAppResult =
-  | { ok: true; manifestJson: string; provider: MiniAppResourceProvider }
+  | {
+      ok: true;
+      manifestJson: string;
+      provider: MiniAppResourceProvider;
+      /**
+       * Always present on a successful load: a package that came through
+       * here has a known origin even when nothing has vouched for its
+       * identity. Optionality begins one layer down, at `SandboxOptions`,
+       * where a caller may legitimately have no package load at all.
+       */
+      provenance: PackageProvenance;
+    }
   | { ok: false; reason: string };
 
 const MANIFEST_FILENAME = 'openmini.json';
@@ -79,5 +90,16 @@ export async function loadMiniAppFromUrl(baseUrl: string): Promise<LoadMiniAppRe
     ok: true,
     manifestJson,
     provider: createFetchResourceProvider(normalizedBaseUrl.toString()),
+    provenance: {
+      baseUrl: normalizedBaseUrl.toString(),
+      // `unsigned` is the literal truth rather than a stand-in: no signature
+      // format exists yet, so no package can carry one. When one does, this
+      // is where the distinction between `unsigned` and `untrusted-key`
+      // starts being made. It stays `verified: false` either way until a
+      // signature is actually checked — a loader that reported anything
+      // better than it had verified would be the failure this type exists
+      // to prevent.
+      identity: { verified: false, reason: 'unsigned' },
+    },
   };
 }

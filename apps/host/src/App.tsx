@@ -3,7 +3,7 @@ import {
   getRuntimeInfo,
   loadMiniAppFromUrl,
 } from '@openmini/runtime';
-import type { MiniAppResourceProvider } from '@openmini/runtime';
+import type { MiniAppResourceProvider, PackageProvenance } from '@openmini/runtime';
 import { getSdkInfo } from '@openmini/sdk';
 import { Placeholder } from '@openmini/ui';
 import type { FormEvent } from 'react';
@@ -114,7 +114,18 @@ type RemoteLoadState =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'error'; reason: string }
-  | { status: 'loaded'; manifestJson: string; provider: MiniAppResourceProvider };
+  | {
+      status: 'loaded';
+      manifestJson: string;
+      provider: MiniAppResourceProvider;
+      /**
+       * Carried in state rather than re-derived at render: it is a property
+       * of the load that produced this package, and re-deriving it from the
+       * URL in the input box would read a value the operator may have edited
+       * since.
+       */
+      provenance: PackageProvenance;
+    };
 
 /**
  * A host-operator-facing "load by URL" control, alongside the `?scenario=`
@@ -131,7 +142,12 @@ function RemoteMiniAppLoader() {
     setState({ status: 'loading' });
     const result = await loadMiniAppFromUrl(url);
     if (result.ok) {
-      setState({ status: 'loaded', manifestJson: result.manifestJson, provider: result.provider });
+      setState({
+        status: 'loaded',
+        manifestJson: result.manifestJson,
+        provider: result.provider,
+        provenance: result.provenance,
+      });
     } else {
       setState({ status: 'error', reason: result.reason });
     }
@@ -155,7 +171,11 @@ function RemoteMiniAppLoader() {
       {state.status === 'error' && <p data-testid="remote-load-error">{state.reason}</p>}
       {state.status === 'loaded' && (
         <div data-testid="remote-miniapp-host">
-          <MiniAppHost manifestJson={state.manifestJson} resourceProvider={state.provider} />
+          <MiniAppHost
+            manifestJson={state.manifestJson}
+            resourceProvider={state.provider}
+            provenance={state.provenance}
+          />
         </div>
       )}
     </section>

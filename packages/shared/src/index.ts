@@ -21,21 +21,6 @@ export {
 } from './crypto';
 
 export {
-  PROVENANCE_FILENAME,
-  PROVENANCE_SIGNATURE_ALGORITHM,
-  PROVENANCE_VERSION,
-  parseProvenance,
-  provenanceSigningInput,
-  serializeProvenance,
-} from './provenance';
-export type {
-  ProvenanceDocument,
-  ProvenanceParseResult,
-  ProvenanceSignature,
-  ProvenanceSubject,
-} from './provenance';
-
-export {
   OPENMINI_BRIDGE_CHANNEL,
   OPENMINI_BRIDGE_VERSION,
   BRIDGE_NAMESPACES,

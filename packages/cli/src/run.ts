@@ -1,7 +1,10 @@
 import { buildPackage } from './commands/build.js';
 import { startDevServer } from './commands/dev.js';
 import { InitError, initProject } from './commands/init.js';
+import { generateKeyFile, KeygenError } from './commands/keygen.js';
+import { SignError, signPackage } from './commands/sign.js';
 import { validatePackage } from './commands/validate.js';
+import { verifyPackage } from './commands/verify.js';
 import { PackageBuildError } from './packageBuild.js';
 import { OPENMINI_CLI_VERSION } from './version.js';
 
@@ -12,11 +15,18 @@ Usage:
   openmini validate [dir|manifest.json]
   openmini build [dir] [--out <dir>] [--html <path>] [--script <path>]
   openmini dev [dir] [--port <n>]
+  openmini keygen --out <keyfile> [--force]
+  openmini sign [dir] --key <keyfile>
+  openmini verify [dir]
 
 Run "openmini <command> --help" for command-specific usage.
 
 A Mini App package contains only what the runtime loads: openmini.json and
-the built entry document. Authoring sources stay in the project directory.`;
+the built entry document. Authoring sources stay in the project directory.
+
+"build" is deterministic and unsigned; "sign" adds a detached
+openmini.sig.json afterwards. They are separate because a signature is
+randomized and a reproducible build cannot contain one.`;
 
 /** Thrown for anything wrong with the command line itself. Always exit 1. */
 export class CliUsageError extends Error {
@@ -78,6 +88,46 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
     usage: `openmini dev [dir] [--port <n>]
 
   --port  Loopback port, 1-65535. Defaults to an ephemeral port.`,
+  },
+  keygen: {
+    valueFlags: ['out'],
+    booleanFlags: ['force'],
+    usage: `openmini keygen --out <keyfile> [--force]
+
+  Generates an ECDSA P-256 signing key for "openmini sign".
+
+  --out    Destination key file. Required.
+  --force  Overwrite an existing key file. The old key is then
+           unrecoverable.
+
+  The key file contains an UNENCRYPTED private key and is written 0600.
+  Keep it out of your package directory and out of version control. The
+  "publicKey" value in it is what a host puts in its trust store.`,
+  },
+  sign: {
+    valueFlags: ['key'],
+    booleanFlags: [],
+    usage: `openmini sign [dir] --key <keyfile>
+
+  Signs a built package, writing a detached openmini.sig.json beside its
+  openmini.json. Defaults to "dist".
+
+  --key  Key file from "openmini keygen". Required.
+
+  Every file in the package is covered except openmini.sig.json itself.
+  Symlinks are refused: a signature must cover bytes the package ships.`,
+  },
+  verify: {
+    valueFlags: [],
+    booleanFlags: [],
+    usage: `openmini verify [dir]
+
+  Checks a package against its openmini.sig.json: that the signature is
+  valid, and that every file on disk matches the digests it covers.
+  Defaults to "dist". Exits 0 if verified, 1 otherwise.
+
+  This does NOT decide whether the signing key is trusted. It prints the
+  key so you can compare it against a host's trust store.`,
   },
 };
 
@@ -268,6 +318,62 @@ export async function run(argv: string[]): Promise<number> {
         }
         throw error;
       }
+    }
+
+    case 'keygen': {
+      const out = flags.out;
+      if (!out) {
+        console.error('keygen requires --out <keyfile>');
+        return 1;
+      }
+      try {
+        const result = await generateKeyFile({ out, force: booleans.has('force') });
+        console.log(`wrote signing key to ${result.keyFile}`);
+        console.log(`  keyId     ${result.keyId}`);
+        console.log(`  publicKey ${result.publicKey}`);
+        console.log('');
+        console.log('The private key in this file is NOT encrypted. Keep it out of your');
+        console.log('package directory and out of version control. Add the publicKey above');
+        console.log("to a host's trust store to have it accept packages signed by this key.");
+        return 0;
+      } catch (error) {
+        if (error instanceof KeygenError) {
+          console.error(error.message);
+          return 1;
+        }
+        throw error;
+      }
+    }
+
+    case 'sign': {
+      const keyFile = flags.key;
+      if (!keyFile) {
+        console.error('sign requires --key <keyfile>');
+        return 1;
+      }
+      try {
+        const result = await signPackage({ packageDir: positionals[0] ?? 'dist', keyFile });
+        console.log(`signed ${result.id} ${result.version} (${result.fileCount} files)`);
+        console.log(`  ${result.signatureFile}`);
+        console.log(`  keyId ${result.keyId}`);
+        return 0;
+      } catch (error) {
+        if (error instanceof SignError) {
+          console.error(error.message);
+          return 1;
+        }
+        throw error;
+      }
+    }
+
+    case 'verify': {
+      const result = await verifyPackage(positionals[0] ?? 'dist');
+      if (result.ok) {
+        console.log(result.report);
+        return 0;
+      }
+      console.error(result.report);
+      return 1;
     }
 
     case 'dev': {

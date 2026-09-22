@@ -347,6 +347,16 @@ export async function importVerifyingKey(publicKeySpki: Uint8Array): Promise<Cry
 }
 
 /**
+ * Imports PKCS#8 bytes as a P-256 signing key — the producer-side
+ * counterpart of `importVerifyingKey`, kept beside it so the two key
+ * encodings this format uses are named in one place.
+ */
+export async function importSigningKey(privateKeyPkcs8: Uint8Array): Promise<CryptoKey> {
+  const data = privateKeyPkcs8 as unknown as Parameters<SubtleCrypto['importKey']>[1];
+  return requireSubtle().importKey('pkcs8', data, WEBCRYPTO_KEY_PARAMS, false, ['sign']);
+}
+
+/**
  * Verifies a parsed envelope and, only if the signature holds, parses and
  * returns the payload it covers.
  *

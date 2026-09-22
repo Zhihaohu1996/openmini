@@ -161,4 +161,80 @@ describe('the built binary', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('openmini build');
   });
+
+  /**
+   * The signing commands get binary coverage for the same reason the rest
+   * do: exit codes are the contract a release pipeline actually consumes.
+   * A `verify` that reports a tampered package on stdout but exits 0 would
+   * pass every in-process test and wave the package straight through CI.
+   */
+  describe('keygen / sign / verify', () => {
+    it('runs the full keygen -> build -> sign -> verify cycle', async () => {
+      const dir = await makeProject();
+      const keyFile = join(await mkdtemp(join(tmpdir(), 'openmini-bin-key-')), 'k.json');
+
+      const keygen = runCli(['keygen', '--out', keyFile]);
+      expect(keygen.status).toBe(0);
+      expect(keygen.stdout).toContain('keyId');
+      // The unencrypted-key warning is part of the command's contract.
+      expect(keygen.stdout).toContain('NOT encrypted');
+
+      expect(runCli(['build', dir]).status).toBe(0);
+
+      const sign = runCli(['sign', join(dir, 'dist'), '--key', keyFile]);
+      expect(sign.status).toBe(0);
+      expect(sign.stdout).toContain('com.example.binary');
+
+      const verify = runCli(['verify', join(dir, 'dist')]);
+      expect(verify.status).toBe(0);
+      expect(verify.stdout).toContain('verified');
+    });
+
+    it('leaves build output unsigned, so a build stays reproducible', async () => {
+      // Signing is a separate step precisely because ECDSA is randomized and
+      // `build` must be byte-reproducible.
+      const dir = await makeProject();
+      expect(runCli(['build', dir]).status).toBe(0);
+      expect((await readdir(join(dir, 'dist'))).sort()).toEqual(['index.html', 'openmini.json']);
+    });
+
+    it('exits 1 when verifying an unsigned package', async () => {
+      const dir = await makeProject();
+      expect(runCli(['build', dir]).status).toBe(0);
+
+      const result = runCli(['verify', join(dir, 'dist')]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('unsigned');
+    });
+
+    it('exits 1 when a signed package has been tampered with', async () => {
+      const dir = await makeProject();
+      const keyFile = join(await mkdtemp(join(tmpdir(), 'openmini-bin-key-')), 'k.json');
+      expect(runCli(['keygen', '--out', keyFile]).status).toBe(0);
+      expect(runCli(['build', dir]).status).toBe(0);
+      expect(runCli(['sign', join(dir, 'dist'), '--key', keyFile]).status).toBe(0);
+
+      await writeFile(join(dir, 'dist', 'index.html'), '<!doctype html>evil', 'utf8');
+
+      const result = runCli(['verify', join(dir, 'dist')]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('modified: index.html');
+    });
+
+    it('exits 1 when signing without --key', async () => {
+      const dir = await makeProject();
+      const result = runCli(['sign', dir]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('--key');
+    });
+
+    it('exits 1 rather than overwriting an existing key file', async () => {
+      const keyFile = join(await mkdtemp(join(tmpdir(), 'openmini-bin-key-')), 'k.json');
+      expect(runCli(['keygen', '--out', keyFile]).status).toBe(0);
+
+      const second = runCli(['keygen', '--out', keyFile]);
+      expect(second.status).toBe(1);
+      expect(second.stderr).toContain('already exists');
+    });
+  });
 });

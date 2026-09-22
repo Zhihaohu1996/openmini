@@ -27,6 +27,7 @@ export {
   SIGNATURE_FILENAME,
   computeKeyId,
   generateSigningKeyPair,
+  importSigningKey,
   importVerifyingKey,
   parseSignatureEnvelope,
   serializeIntegrityPayload,

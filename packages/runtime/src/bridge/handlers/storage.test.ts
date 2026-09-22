@@ -260,11 +260,150 @@ describe('createStorageHandlers', () => {
     });
 
     it('accepts an explicitly supplied provider instead of the default in-memory one', async () => {
+      // Asserted through the handler, and by the supplied provider now holding
+      // an entry, rather than by reading a hardcoded appId out of it. Phase 10
+      // made the storage key a derived scope, so a test that named the bare
+      // manifest.id was pinning an internal layout rather than the behaviour
+      // it describes — which is that the *supplied* provider is the one used.
       const provider: MiniAppStorageProvider = createInMemoryStorageProvider();
       const handlers = createStorageHandlers({ provider });
       const ctx = makeContext();
+
       await handlers.set?.({ key: 'k', value: 'via custom provider' }, ctx);
-      expect(await provider.get(ctx.manifest.id, 'k')).toBe('via custom provider');
+
+      await expect(handlers.get?.({ key: 'k' }, ctx)).resolves.toBe('via custom provider');
+      // A separate handler over its own default provider cannot see it, which
+      // is what proves the supplied one was written to.
+      await expect(createStorageHandlers().get?.({ key: 'k' }, ctx)).resolves.toBe(null);
     });
+  });
+});
+
+/**
+ * Handler-level scoping, on top of the derivation tests in
+ * storageScope.test.ts and the protocol tests in storageMigration.test.ts.
+ * These cover what only the handler can: that it awaits the resolution before
+ * touching the provider, and shares one run across concurrent calls.
+ */
+describe('scope resolution at the handler', () => {
+  const APP_ID = 'com.openmini.test';
+  const ORIGIN = 'https://good.example';
+
+  const verifiedCtx = (): BridgeHandlerContext => ({
+    sandbox: {} as never,
+    manifest: makeManifest(APP_ID),
+    provenance: {
+      baseUrl: `${ORIGIN}/app/`,
+      identity: { verified: true, id: APP_ID, keyId: 'KEY-A' },
+    },
+  });
+
+  it('refuses a storage call whose verified identity disagrees with the manifest', async () => {
+    // Never downgraded to a weaker scope. The Mini App learns nothing: the
+    // dispatcher maps an unrecognized error to INTERNAL_ERROR.
+    const handlers = createStorageHandlers({ provider: createInMemoryStorageProvider() });
+    const ctx: BridgeHandlerContext = {
+      sandbox: {} as never,
+      manifest: makeManifest(APP_ID),
+      provenance: {
+        baseUrl: `${ORIGIN}/app/`,
+        identity: { verified: true, id: 'com.example.someone-else', keyId: 'K' },
+      },
+    };
+
+    await expect(handlers.get?.({ key: 'k' }, ctx)).rejects.toThrow(/identity-mismatch/);
+    await expect(handlers.set?.({ key: 'k', value: 'v' }, ctx)).rejects.toThrow(
+      /identity-mismatch/,
+    );
+  });
+
+  it('does not serve the verified scope when the migration cannot complete', async () => {
+    // "Never switch until conclusively complete" is what stops a half-copied
+    // namespace from being served as if it were whole. A failing provider
+    // means the call fails, not that it reads partial data.
+    const inner = createInMemoryStorageProvider();
+    await inner.set(`v1:origin:${ORIGIN}|${APP_ID}`, 'a', '1');
+    await inner.set(`v1:origin:${ORIGIN}|${APP_ID}`, 'b', '2');
+
+    let sets = 0;
+    const crashing: MiniAppStorageProvider = {
+      get: (a, k) => inner.get(a, k),
+      entries: (a) => inner.entries(a),
+      getUsedBytes: (a) => inner.getUsedBytes(a),
+      async set(a, k, v) {
+        sets += 1;
+        if (sets === 3) throw new Error('simulated crash');
+        return inner.set(a, k, v);
+      },
+    };
+
+    const handlers = createStorageHandlers({ provider: crashing });
+    await expect(handlers.get?.({ key: 'a' }, verifiedCtx())).rejects.toThrow(/simulated crash/);
+  });
+
+  it('shares one migration run across concurrent get and set', async () => {
+    // The promise is memoized, not its result. Two concurrent calls must not
+    // start two migrations.
+    const inner = createInMemoryStorageProvider();
+    await inner.set(`v1:origin:${ORIGIN}|${APP_ID}`, 'seed', 'value');
+
+    let pendingRecordWrites = 0;
+    const counting: MiniAppStorageProvider = {
+      get: (a, k) => inner.get(a, k),
+      entries: (a) => inner.entries(a),
+      getUsedBytes: (a) => inner.getUsedBytes(a),
+      async set(a, k, v) {
+        if (a === 'v1:meta:migration' && v.includes('"pending"')) {
+          pendingRecordWrites += 1;
+        }
+        return inner.set(a, k, v);
+      },
+    };
+
+    const handlers = createStorageHandlers({ provider: counting });
+    const ctx = verifiedCtx();
+    await Promise.all([
+      handlers.get?.({ key: 'seed' }, ctx),
+      handlers.set?.({ key: 'other', value: 'x' }, ctx),
+      handlers.get?.({ key: 'seed' }, ctx),
+    ]);
+
+    expect(pendingRecordWrites).toBe(1);
+  });
+
+  it('retries the resolution on a later call after a transient failure', async () => {
+    // A rejected resolution is evicted from the memo. One bad call must not
+    // disable storage for the lifetime of the sandbox.
+    const inner = createInMemoryStorageProvider();
+    let failNext = true;
+    const flaky: MiniAppStorageProvider = {
+      get: (a, k) => inner.get(a, k),
+      getUsedBytes: (a) => inner.getUsedBytes(a),
+      set: (a, k, v) => inner.set(a, k, v),
+      async entries(a) {
+        if (failNext) {
+          failNext = false;
+          throw new Error('transient');
+        }
+        return inner.entries(a);
+      },
+    };
+
+    const handlers = createStorageHandlers({ provider: flaky });
+    const ctx = verifiedCtx();
+
+    await expect(handlers.get?.({ key: 'k' }, ctx)).rejects.toThrow(/transient/);
+    await expect(handlers.get?.({ key: 'k' }, ctx)).resolves.toBeNull();
+  });
+
+  it('measures quota against the resolved scope, not the bare manifest id', async () => {
+    const provider = createInMemoryStorageProvider();
+    // Data parked at the bare id must not count against a verified package.
+    await provider.set(APP_ID, 'squatter', 'x'.repeat(400));
+
+    const handlers = createStorageHandlers({ provider, maxTotalBytesPerApp: 100 });
+    await expect(
+      handlers.set?.({ key: 'k', value: 'small' }, verifiedCtx()),
+    ).resolves.toBeUndefined();
   });
 });

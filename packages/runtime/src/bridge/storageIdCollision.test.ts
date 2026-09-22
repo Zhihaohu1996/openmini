@@ -6,32 +6,34 @@ import { createInMemoryStorageProvider } from './handlers/storageProvider';
 import type { BridgeHandlerContext } from './types';
 
 /**
- * A limitation test: what Phase 9 did *not* close.
+ * The id-collision boundary — formerly the limitation test for it.
  *
- * `openmini.storage.*` scopes every key to `ctx.manifest.id`, and
- * docs/security/bridge.md has recorded since Phase 4/5 that nothing verifies
- * a package is entitled to the id it claims — so two packages declaring the
- * same id share one store. Phase 9 narrows that, and it is worth being exact
- * about how far:
+ * Phase 9 left this file asserting a leak, on purpose: `openmini.storage.*`
+ * scoped every key to the self-asserted `manifest.id`, so two packages from
+ * anywhere at all could claim one id and share one store. The file existed so
+ * that closing the gap would break a test naming what changed.
  *
- * - A **registered** id is now genuinely owned. `packageVerification` refuses
- *   to load a package claiming a registered id unless it is signed by a key
- *   the host registered for it, so an impostor cannot reach the bridge at
- *   all, let alone its storage.
+ * Phase 10 closed it, and this is that break. `storage.ts` now derives its
+ * scope from `ctx.provenance` (see `handlers/storageScope.ts`), so:
  *
- * - An **unregistered** id is exactly as unprotected as before. Two unsigned
- *   packages declaring `com.example.notes` still share a store, because
- *   nothing in the host claims to know who owns that id.
+ * - a **verified** package gets a namespace named by its id, which only a
+ *   package signed by a registered key can ever reach;
+ * - an **unverified** package gets a namespace qualified by the origin it was
+ *   served from, so two origins claiming one id no longer collide;
+ * - a package that never went through a load at all — a static fixture, a
+ *   test — keeps its own namespace and is isolated from both.
  *
- * The storage handler is unchanged by this commit, deliberately. Gating
- * storage on `ctx.provenance` is a real design decision with real
- * consequences — it would orphan the data of every package that is currently
- * unsigned, and it needs a migration story rather than a conditional — so it
- * belongs to the phase that takes it, not to a test file. What this file
- * does is make the remaining gap executable instead of prose, so that if
- * someone later closes it the failure here is what tells them they did.
+ * What did **not** change is pinned below rather than left to be
+ * rediscovered: two unsigned packages served from the *same* origin sharing
+ * an id still share a store.
  *
- * See docs/security/integrity.md and docs/security/bridge.md.
+ * The protection is now two independent layers, and the fourth test still
+ * describes the first one: a registered id is refused at *load* time, so an
+ * impostor never reaches the bridge, let alone its storage. Scope derivation
+ * is the second layer, and the one that covers every id the host has not
+ * registered.
+ *
+ * See docs/security/bridge.md and docs/security/integrity.md.
  */
 
 function manifestWithId(id: string): OpenMiniManifest {
@@ -62,22 +64,26 @@ const unsignedFrom = (baseUrl: string): PackageProvenance => ({
   identity: { verified: false, reason: 'unsigned' },
 });
 
-describe('storage is still keyed on a self-asserted id (known limitation)', () => {
-  it('lets a second unsigned package read the first package data under the same id', async () => {
-    // Both packages come from different origins and neither is signed. The
-    // only thing linking them is a string they each chose for themselves.
+describe('storage is scoped by provenance, not by a self-asserted id', () => {
+  it('refuses a second unsigned package from a different origin the first package data under the same id', async () => {
+    // The leak this file was written to document. Both packages are unsigned
+    // and both declare the same id; the only thing distinguishing them is
+    // where they were served from, and that is now enough.
     const handlers = createStorageHandlers({ provider: createInMemoryStorageProvider() });
     const victim = contextFor('com.example.notes', unsignedFrom('https://good.example/app/'));
     const impostor = contextFor('com.example.notes', unsignedFrom('https://evil.example/app/'));
 
     await handlers.set?.({ key: 'token', value: 'secret' }, victim);
 
-    expect(await handlers.get?.({ key: 'token' }, impostor)).toBe('secret');
+    expect(await handlers.get?.({ key: 'token' }, impostor)).toBeNull();
+    // ...and the victim still has its own data.
+    expect(await handlers.get?.({ key: 'token' }, victim)).toBe('secret');
   });
 
-  it('does not consult provenance when scoping a key', async () => {
-    // Stated as its own assertion so that closing the gap breaks a test
-    // whose name says what changed, rather than one about impostors.
+  it('scopes on provenance: a verified write is not readable with undefined provenance', async () => {
+    // The assertion whose name says what changed. `undefined` provenance means
+    // no package load happened at all, which Phase 9 made a distinct state
+    // from `verified: false`; it stays distinct here, in the data.
     const handlers = createStorageHandlers({ provider: createInMemoryStorageProvider() });
     const verified: PackageProvenance = {
       baseUrl: 'https://good.example/app/',
@@ -86,29 +92,23 @@ describe('storage is still keyed on a self-asserted id (known limitation)', () =
 
     await handlers.set?.({ key: 'k', value: 'v' }, contextFor('com.example.notes', verified));
 
-    // Read back with no provenance at all: a static fixture, or any caller
-    // that never went through the package-load path.
-    expect(await handlers.get?.({ key: 'k' }, contextFor('com.example.notes'))).toBe('v');
+    expect(await handlers.get?.({ key: 'k' }, contextFor('com.example.notes'))).toBeNull();
   });
 
-  it('still separates different ids, which is the part that does hold', async () => {
-    // The limitation is about impersonation, not about scoping being absent.
+  it('still separates different ids, which is the part that always held', async () => {
     const handlers = createStorageHandlers({ provider: createInMemoryStorageProvider() });
 
     await handlers.set?.({ key: 'k', value: 'mine' }, contextFor('com.example.notes'));
 
     expect(await handlers.get?.({ key: 'k' }, contextFor('com.example.other'))).toBeNull();
   });
-});
 
-describe('what Phase 9 does close', () => {
-  it('keeps a registered id out of reach by refusing the load, not by gating storage', async () => {
-    // The protection for a registered id lives one layer up: an impostor is
-    // refused by `verifyPackage` before a dispatcher, a handler context, or
-    // a storage call exists. This asserts the shape of that defence rather
-    // than re-testing it — packageVerification.test.ts owns the detail — so
-    // that this file does not read as though storage were unprotected for
-    // every id.
+  it('keeps a registered id out of reach by refusing the load, not only by scoping storage', async () => {
+    // The first of the two layers, unchanged by this phase. An impostor
+    // claiming a registered id is refused by `verifyPackage` before a
+    // dispatcher, a handler context, or a storage call exists. Scope
+    // derivation is defence in depth behind it, and the layer that covers
+    // every id the host has *not* registered.
     const { verifyPackage } = await import('../sandbox/packageVerification');
     const manifestJson = JSON.stringify(manifestWithId('com.example.notes'));
 
@@ -122,5 +122,24 @@ describe('what Phase 9 does close', () => {
     });
 
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('what Phase 10 did not close', () => {
+  it('still shares a store between two unsigned packages on the same origin', async () => {
+    // Pinned the way the old gap was pinned: executable rather than prose, so
+    // that a future phase which closes it breaks a test naming what changed.
+    //
+    // A path is not a security boundary here. Anyone able to publish at
+    // https://host.example/evil/ can publish at https://host.example/app/, so
+    // scoping by path would buy no isolation while breaking every app that
+    // moves. Two packages on one origin are already mutually trusting.
+    const handlers = createStorageHandlers({ provider: createInMemoryStorageProvider() });
+    const atAppPath = contextFor('com.example.notes', unsignedFrom('https://host.example/app/'));
+    const atOtherPath = contextFor('com.example.notes', unsignedFrom('https://host.example/evil/'));
+
+    await handlers.set?.({ key: 'token', value: 'secret' }, atAppPath);
+
+    expect(await handlers.get?.({ key: 'token' }, atOtherPath)).toBe('secret');
   });
 });

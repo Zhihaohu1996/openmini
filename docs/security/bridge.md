@@ -238,25 +238,38 @@ which provider is plugged in):
   to close this gap — documented here the same way Phase 3/4 documented their
   own limits, rather than silently glossed over.
 
-- **Known limitation — storage is keyed on a self-asserted identity.** Every
-  key is scoped to `manifest.id`, but nothing verifies that a package is
-  entitled to the id it claims: `loadMiniAppFromUrl` performs no ownership,
-  signature, or integrity check. A package loaded from anywhere that declares
-  `"id": "com.example.other-app"` therefore reads and writes that app's
-  stored data.
+- **Known limitation — storage is keyed on a self-asserted identity, for
+  unregistered ids.** Every key is scoped to `manifest.id`. Phase 9 narrowed
+  this but did not close it, and the difference matters:
 
-  This is bounded by the trust model rather than by a check: loading a Mini
-  App by URL is a host-operator action, documented in
+  - For an id **registered** in the host's trust store, a package claiming
+    that id must be signed by a key the host registered for it or it does not
+    load at all. An impostor never reaches the bridge, so it never reaches
+    that id's storage. See [integrity.md](integrity.md).
+  - For an **unregistered** id — which is every id by default — nothing has
+    changed. A package loaded from anywhere that declares
+    `"id": "com.example.other-app"` still reads and writes that app's stored
+    data, because nothing in the host claims to know who owns that id.
+
+  The storage handler deliberately does not consult `ctx.provenance`: gating
+  storage on it would orphan the data of every currently-unsigned package, so
+  it needs a migration story rather than a conditional. The remaining gap is
+  pinned by
+  [`storageIdCollision.test.ts`](../../packages/runtime/src/bridge/storageIdCollision.test.ts).
+
+  It remains bounded by the trust model as well as by registration: loading a
+  Mini App by URL is a host-operator action, documented in
   [sandbox.md](sandbox.md) as "equivalent in trust terms to a user typing a
   URL into their own browser's address bar". So it is not an unauthenticated
-  attack — but it does mean **`manifest.id` is not a security boundary**, and
-  storage must not be treated as a place only one app can reach.
+  attack — but for an unregistered id it still means **`manifest.id` is not a
+  security boundary**, and storage under one must not be treated as a place
+  only one app can reach.
 
-  Closing it requires verified package identity (integrity/signing), which is
-  deferred to a later phase. Until then, do not store anything in
-  `openmini.storage.*` whose disclosure to another loaded package would
-  matter — notably auth tokens, which is one reason real identity is
-  sequenced *after* package integrity rather than before it.
+  Phase 9 supplied the mechanism that closes this — registering an id in the
+  host's trust store makes it genuinely owned — so the remaining work is
+  per-id configuration rather than a missing capability. Until an id is
+  registered, do not store anything under `openmini.storage.*` whose
+  disclosure to another loaded package would matter, notably auth tokens.
 
 ## Mini App SDK (`@openmini/sdk`)
 

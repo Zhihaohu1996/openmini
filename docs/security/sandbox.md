@@ -168,6 +168,16 @@ bytes it was always going to hand to `srcdoc`. CSP correctness remains the packa
 responsibility, exactly as with `StaticFixtureResourceProvider` — the runtime never computes or
 injects CSP into fetched content.
 
+**Since Phase 9, a fetched package is also verified.** `loadMiniAppFromUrl` fetches the
+package's detached `openmini.sig.json`, checks the signature, compares the signing key against
+the host's trust store, and refuses the load outright for an id the host has registered if the
+package is unsigned or signed by an unregistered key. When a signature is present and valid, the
+`FetchResourceProvider` it hands back enforces that signature's digests on every resource read,
+and refuses any file the signature does not cover. A package whose id is *not* registered still
+loads unsigned, reported as such — verification is a check the host configures per id, not a
+blanket requirement. The full policy, including why a broken signature never degrades to
+"unsigned", is in [integrity.md](integrity.md).
+
 ## Containment (path security)
 
 [`containment.ts`](../../packages/runtime/src/sandbox/containment.ts) is a defense-in-depth layer,

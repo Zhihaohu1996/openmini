@@ -23,8 +23,8 @@ organization can run it without depending on a single vendor.
 
 ## Status
 
-**Phase 8: packaging format and CLI toolchain.** The project now has a working
-end-to-end path from source to sandboxed Mini App:
+**Phase 9: package integrity and identity.** The project now has a working
+end-to-end path from source to a verified, sandboxed Mini App:
 
 - **Phase 2** — the [`openmini.json` manifest format](docs/manifest.md),
   parsed and validated by `@openmini/manifest`.
@@ -38,9 +38,16 @@ end-to-end path from source to sandboxed Mini App:
   allowlist.
 - **Phase 8** — [`@openmini/cli`](docs/cli.md): scaffold, validate, build and
   serve Mini App packages.
+- **Phase 9** — [package integrity and identity](docs/security/integrity.md):
+  a detached `openmini.sig.json` (ECDSA P-256), `keygen`/`sign`/`verify` CLI
+  commands, and load-time verification against a host trust store that fails
+  closed for registered ids.
 
-Still to come: verified package identity/integrity and signing, real
-user/auth/identity, and multi-view routing. See
+Still to come: key distribution and revocation, real user/auth/identity, and
+multi-view routing. Phase 9 verifies packages but does not distribute keys —
+a host operator configures trusted keys by hand — and `manifest.id` remains
+a self-asserted value for any id the host has **not** registered. See
+[docs/security/integrity.md](docs/security/integrity.md) and
 [docs/security/bridge.md](docs/security/bridge.md) for the boundaries the
 current phases deliberately do **not** provide.
 

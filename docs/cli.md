@@ -1,4 +1,4 @@
-# `@openmini/cli` — Mini App packaging toolchain (Phase 8)
+# `@openmini/cli` — Mini App packaging toolchain (Phase 8, + Phase 9 signing)
 
 A Mini App is loaded as a **single self-contained HTML document** whose CSP
 permits exactly one inline script, identified by its `sha256` hash. Producing
@@ -11,6 +11,9 @@ openmini init <dir> --id <app.id> [--name <name>]
 openmini validate [dir|manifest.json]
 openmini build [dir] [--out <dir>] [--html <path>] [--script <path>]
 openmini dev [dir] [--port <n>]
+openmini keygen --out <keyfile> [--force]
+openmini sign [dir] --key <keyfile>
+openmini verify [dir]
 ```
 
 Every command exits non-zero on failure, so CI can rely on the exit status.
@@ -108,8 +111,9 @@ Identical inputs and tool version produce **byte-identical** output. No
 timestamps, absolute paths, random ids, or locale-dependent formatting are
 written; the manifest is copied through verbatim rather than re-serialized,
 and output is written with LF endings so the bytes match across platforms.
-This is a precondition for a later phase that intends to digest and sign
-packages — a digest is meaningless if rebuilding changes bytes.
+This is what makes `openmini sign` meaningful: a digest says nothing if
+rebuilding the same source changes bytes. It is also why `build` itself does
+not sign — see "Signing" below.
 
 ### What the build refuses, and why
 
@@ -178,13 +182,82 @@ Two details worth knowing, both previously surprising:
 `openmini dev` never exits on its own — it holds the process open until
 interrupted, so it has no exit code to report.
 
+## Signing (Phase 9)
+
+The CSP hashes above are a **CSP binding mechanism, not integrity
+verification**: they tie the inline script and style to the policy *in the
+same document*, so anyone editing the script can recompute the hash, rewrite
+the `<meta>`, and produce something internally consistent. Answering "who
+produced this package, and are these the bytes they produced?" needs a
+signature, which is what these three commands add. The format and the
+load-time policy are documented in
+[security/integrity.md](security/integrity.md).
+
+```
+openmini keygen --out <keyfile> [--force]
+openmini sign [dir] --key <keyfile>
+openmini verify [dir]
+```
+
+### `openmini keygen`
+
+Generates an ECDSA P-256 signing key. `--force` overwrites an existing file,
+after which the old key is unrecoverable and packages signed with it can no
+longer be re-signed; without it, an existing path is an error.
+
+The `publicKey` printed here is what a host operator puts in a trust store.
+
+**The private key in the file is not encrypted.** It is written `0600`, and
+created with an exclusive open so refusing to overwrite is enforced by the
+open itself rather than by a check another process could slip between. Keep
+it out of your package directory and out of version control. Encrypting it
+needs a KDF, a passphrase prompt, and an answer for non-interactive CI, none
+of which this phase settles.
+
+### `openmini sign`
+
+Writes a detached `openmini.sig.json` beside the package's `openmini.json`,
+covering every file in the package except that signature file itself.
+
+- Paths in the signature are package-root-relative and POSIX-shaped on every
+  platform, because the browser runtime that verifies them only ever sees
+  forward slashes.
+- The order is deterministic, so re-signing an unchanged package does not
+  churn the artifact.
+- **Symlinks are refused.** A signature must cover bytes the package actually
+  ships; a link's target may sit outside the package and may change after
+  signing. Skipping links instead would silently drop a file you put there.
+- The manifest is validated first — the signature binds `id` and `version`,
+  so signing a package with an invalid manifest would attest to an identity
+  the runtime rejects anyway.
+
+`build` remains deterministic and unsigned, and signing is a separate step
+for that reason: ECDSA is randomized, so a build that signed its own output
+could never be byte-reproducible. Keeping them apart means anyone can rebuild
+a package and compare it byte for byte, with the signature layered on top.
+
+### `openmini verify`
+
+Checks a package against its signature and reports the two possible failures
+separately, because the remedies differ:
+
+| Outcome | Meaning |
+|---|---|
+| `unsigned` | No `openmini.sig.json`. The package makes no claim; nothing is wrong with it. |
+| signature invalid | The signature file was altered, or was never genuine. |
+| `signature is authentic, but the package does not match it` | The package was modified after signing. Lists each file as `modified`, `missing`, or `unsigned` (present but not covered). |
+| `verified` | Every covered file matches, and every file present is covered. |
+
+**`verify` does not decide trust, and says so in its output.** A package
+signed with an attacker's own key verifies here exactly as a legitimate one
+does — only a host's trust store can reject that, so the `keyId` and public
+key are always printed for you to compare.
+
 ## What this phase does not provide
 
-The hashes here are a **CSP binding mechanism, not integrity verification**:
-they tie the inline script and style to the policy *in the same document*.
-Anyone editing the script can recompute the hash and rewrite the `<meta>`,
-and the result is still internally consistent. The CLI makes no claim about
-who produced a package, whether it was modified in transit, or whether its
-`manifest.id` is legitimately its own — see the storage note in
-[security/bridge.md](security/bridge.md). Verified package identity,
-signing, and load-time integrity checking are deferred to a later phase.
+The CLI still makes no claim about **key distribution**: there is no
+registry, no expiry, no revocation, and no rotation protocol. A host operator
+configures trusted keys by hand, and removes a compromised one the same way.
+See the "What this phase does not provide" section of
+[security/integrity.md](security/integrity.md), and the narrowed storage note
+in [security/bridge.md](security/bridge.md).

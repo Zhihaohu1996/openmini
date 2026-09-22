@@ -37,10 +37,11 @@ export interface MiniAppResourceProvider {
  * later is a cross-layer edit, and the point of threading it now is to do
  * that edit exactly once.
  *
- * The `verified: true` arm is therefore unreachable today — nothing produces
- * a signature yet. That is intentional. Consumers should switch on
- * `identity.verified` now, so that when verification does land the compiler
- * has already forced every call site to say what it does with both answers.
+ * Both arms are reachable as of Phase 9: `loadMiniAppFromUrl` verifies a
+ * package's detached signature against the host trust store and reports what
+ * it concluded. Consumers switch on `identity.verified`, so the compiler
+ * forces every call site to say what it does with both answers — see
+ * `deriveStorageScope`, which turns that answer into a storage namespace.
  *
  * `baseUrl` is the *normalized* package root (see `normalizePackageBaseUrl`),
  * not the string a caller typed. A later check that compares a resource's

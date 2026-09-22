@@ -21,6 +21,29 @@ export {
 } from './crypto';
 
 export {
+  INTEGRITY_ALGORITHM,
+  INTEGRITY_PAYLOAD_VERSION,
+  SIGNATURE_ENVELOPE_VERSION,
+  SIGNATURE_FILENAME,
+  computeKeyId,
+  generateSigningKeyPair,
+  importVerifyingKey,
+  parseSignatureEnvelope,
+  serializeIntegrityPayload,
+  serializeSignatureEnvelope,
+  signIntegrityPayload,
+  verifySignatureEnvelope,
+  verifySignatureFile,
+} from './integrity';
+export type {
+  IntegrityPayload,
+  ParseEnvelopeResult,
+  SignatureEnvelope,
+  SigningKeyPair,
+  VerifyResult,
+} from './integrity';
+
+export {
   OPENMINI_BRIDGE_CHANNEL,
   OPENMINI_BRIDGE_VERSION,
   BRIDGE_NAMESPACES,

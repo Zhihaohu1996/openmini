@@ -192,3 +192,81 @@ describe('createFetchResourceProvider', () => {
     });
   });
 });
+
+describe('digest enforcement', () => {
+  const BASE = 'https://cdn.example.com/apps/demo/';
+  const BODY = '<!doctype html><title>hi</title>';
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  /** A streaming response, which is the path a real fetch body takes. */
+  function streamingOk(text: string) {
+    const bytes = new TextEncoder().encode(text);
+    let done = false;
+    return vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: async () => {
+            if (done) return { done: true, value: undefined };
+            done = true;
+            return { done: false, value: bytes };
+          },
+          cancel: async () => undefined,
+        }),
+      },
+      text: async () => {
+        throw new Error('text() must not be used when a streaming body exists');
+      },
+    });
+  }
+
+  const digestOf = async (text: string): Promise<string> => {
+    const { sha256Base64 } = await import('@openmini/shared');
+    return sha256Base64(new TextEncoder().encode(text));
+  };
+
+  it('returns a resource whose bytes match its signed digest', async () => {
+    global.fetch = streamingOk(BODY) as unknown as typeof fetch;
+    const provider = createFetchResourceProvider(BASE, { 'index.html': await digestOf(BODY) });
+    await expect(provider.readText('index.html')).resolves.toBe(BODY);
+  });
+
+  it('rejects a resource whose bytes do not match', async () => {
+    global.fetch = streamingOk('<!doctype html>evil') as unknown as typeof fetch;
+    const provider = createFetchResourceProvider(BASE, { 'index.html': await digestOf(BODY) });
+    await expect(provider.readText('index.html')).rejects.toThrow(
+      /does not match its signed digest/,
+    );
+  });
+
+  it('refuses a resource the signature does not cover, without fetching it', async () => {
+    // Otherwise an attacker adds a file rather than altering one, and every
+    // digest still matches.
+    const fetchMock = streamingOk(BODY);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const provider = createFetchResourceProvider(BASE, { 'index.html': await digestOf(BODY) });
+
+    await expect(provider.readText('extra.js')).rejects.toThrow(/not covered by the package/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('looks the digest up under the single legal spelling of the path', async () => {
+    // `./index.html` and `index.html` are the same file. Looking up the
+    // caller's raw string would report the first as uncovered.
+    global.fetch = streamingOk(BODY) as unknown as typeof fetch;
+    const provider = createFetchResourceProvider(BASE, { 'index.html': await digestOf(BODY) });
+    await expect(provider.readText('./index.html')).resolves.toBe(BODY);
+  });
+
+  it('checks nothing when no digests are supplied', async () => {
+    // An unsigned package has nothing to check against. Whether it may load
+    // at all is decided in packageVerification, before this point.
+    global.fetch = mockFetchOk(BODY) as unknown as typeof fetch;
+    await expect(createFetchResourceProvider(BASE).readText('index.html')).resolves.toBe(BODY);
+  });
+});

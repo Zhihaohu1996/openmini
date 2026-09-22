@@ -12,8 +12,40 @@ const MANIFEST_JSON = JSON.stringify({
   permissions: [],
 });
 
+/**
+ * A fake Response.
+ *
+ * `arrayBuffer` is here because the loader now reads the manifest with
+ * `captureBytes`: the manifest's digest has to be computed over the bytes
+ * that were served, so a mock that only implements `text()` no longer models
+ * the part of the Response API the code uses.
+ */
+function fakeResponse(text: string, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: () => Promise.resolve(text),
+    arrayBuffer: () => {
+      const bytes = new TextEncoder().encode(text);
+      return Promise.resolve(
+        bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+      );
+    },
+  };
+}
+
+/**
+ * Answers the manifest request and 404s the signature request, which is what
+ * an unsigned package on a static host looks like. Tests that want a signed
+ * package supply their own mock.
+ */
 function mockFetchOk(text: string) {
-  return vi.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve(text) });
+  return vi.fn().mockImplementation((url: URL | string) => {
+    if (url.toString().endsWith('openmini.sig.json')) {
+      return Promise.resolve(fakeResponse('', 404));
+    }
+    return Promise.resolve(fakeResponse(text));
+  });
 }
 
 function fetchedUrl(fetchMock: ReturnType<typeof vi.fn>, callIndex: number): string {
@@ -101,15 +133,17 @@ describe('loadMiniAppFromUrl', () => {
     await loadMiniAppFromUrl('http://localhost:5173/miniapps/hello-remote');
     await loadMiniAppFromUrl('http://localhost:5173/miniapps/hello-remote/');
 
-    expect(fetchedUrl(fetchMock, 0)).toBe(fetchedUrl(fetchMock, 1));
+    // Each load now issues two requests (manifest, then signature), so the
+    // manifest requests are selected by name rather than by call index.
+    const manifestUrls = (fetchMock.mock.calls as unknown as URL[][])
+      .map((call) => call[0]?.toString() ?? '')
+      .filter((url) => url.endsWith('openmini.json'));
+    expect(manifestUrls).toHaveLength(2);
+    expect(manifestUrls[0]).toBe(manifestUrls[1]);
   });
 
   it('returns ok:false for a 404 without throwing', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-      text: () => Promise.resolve(''),
-    }) as unknown as typeof fetch;
+    global.fetch = vi.fn().mockResolvedValue(fakeResponse('', 404)) as unknown as typeof fetch;
 
     const result = await loadMiniAppFromUrl('http://localhost:5173/miniapps/missing');
     expect(result).toEqual({ ok: false, reason: 'manifest fetch failed (404)' });

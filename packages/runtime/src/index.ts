@@ -22,6 +22,13 @@ export {
   PACKAGE_MAX_RESOURCE_BYTES,
 } from './sandbox/fetchResourceProvider';
 export { loadMiniAppFromUrl } from './sandbox/loadMiniAppFromUrl';
+export type { LoadMiniAppOptions } from './sandbox/loadMiniAppFromUrl';
+export { verifyPackage } from './sandbox/packageVerification';
+export type {
+  PackageTrustStore,
+  PackageVerificationOutcome,
+  VerifyPackageInput,
+} from './sandbox/packageVerification';
 export type { LoadMiniAppResult } from './sandbox/loadMiniAppFromUrl';
 // The CSP/sandbox policy lives in @openmini/shared (pure string logic, no DOM)
 // so the Node CLI can generate packages against the exact same definition the

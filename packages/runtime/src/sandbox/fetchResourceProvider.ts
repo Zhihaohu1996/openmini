@@ -1,3 +1,4 @@
+import { digestsEqual, sha256Base64 } from '@openmini/shared';
 import { BoundedFetchError, fetchBounded } from '../http/boundedFetch';
 import { resolveContainedPath } from './containment';
 import type { MiniAppResourceProvider } from './types';
@@ -99,9 +100,20 @@ function isUnderPackageBase(resolved: URL, baseUrl: URL): boolean {
  */
 export class FetchResourceProvider implements MiniAppResourceProvider {
   private readonly baseUrl: URL;
+  private readonly digests: Readonly<Record<string, string>> | undefined;
 
-  constructor(baseUrl: string) {
+  /**
+   * `digests` turns this into a verifying provider: every resource read must
+   * appear in the map and must hash to the value recorded there.
+   *
+   * Absent for an unsigned package, where there is nothing to check
+   * against. That is not a silent downgrade — whether a package is allowed
+   * to be unsigned at all is decided in `packageVerification`, before this
+   * provider is ever constructed.
+   */
+  constructor(baseUrl: string, digests?: Readonly<Record<string, string>>) {
     this.baseUrl = normalizePackageBaseUrl(baseUrl);
+    this.digests = digests;
   }
 
   async readText(relativePath: string): Promise<string> {
@@ -110,9 +122,25 @@ export class FetchResourceProvider implements MiniAppResourceProvider {
       throw new Error(`resource path rejected (${containment.reason}): ${relativePath}`);
     }
 
-    const url = new URL(containment.segments.join('/'), this.baseUrl);
+    // The signed payload keys on the package-relative POSIX path, and
+    // `containment.segments` is that path in its one legal spelling — the
+    // same normalization the signer applied. Looking up the caller's raw
+    // string instead would let `./index.html` miss an entry for
+    // `index.html` and be reported as uncovered.
+    const signedPath = containment.segments.join('/');
+
+    const url = new URL(signedPath, this.baseUrl);
     if (!isUnderPackageBase(url, this.baseUrl)) {
       throw new Error(`resource path resolved outside the package base: ${relativePath}`);
+    }
+
+    // A file the signature says nothing about is refused, not fetched. This
+    // is the difference between "the files it mentions are intact" and "the
+    // package is what was signed": without it, an attacker adds a file
+    // rather than altering one, and every digest still matches.
+    const expectedDigest = this.digests?.[signedPath];
+    if (this.digests !== undefined && expectedDigest === undefined) {
+      throw new Error(`resource is not covered by the package signature: ${relativePath}`);
     }
 
     // Bounded in size and time by the same mechanism as `network.fetch`, and
@@ -122,6 +150,10 @@ export class FetchResourceProvider implements MiniAppResourceProvider {
       result = await fetchBounded(url.toString(), PACKAGE_FETCH_INIT, {
         timeoutMs: PACKAGE_FETCH_TIMEOUT_MS,
         maxBodyBytes: PACKAGE_MAX_RESOURCE_BYTES,
+        // Only when there is a digest to check. The bytes are needed because
+        // a digest must cover what was served, and re-encoding the decoded
+        // text would hash something the server never sent.
+        captureBytes: expectedDigest !== undefined,
       });
     } catch (error) {
       if (error instanceof BoundedFetchError) {
@@ -150,10 +182,25 @@ export class FetchResourceProvider implements MiniAppResourceProvider {
       throw new Error(`resource fetch failed (${result.response.status}): ${relativePath}`);
     }
 
+    if (expectedDigest !== undefined) {
+      // `bytes` is guaranteed here because `captureBytes` was set on the
+      // same condition; the guard states that rather than asserting it.
+      const bytes = result.bytes;
+      if (bytes === undefined) {
+        throw new Error(`could not capture bytes to verify resource: ${relativePath}`);
+      }
+      if (!digestsEqual(await sha256Base64(bytes), expectedDigest)) {
+        throw new Error(`resource does not match its signed digest: ${relativePath}`);
+      }
+    }
+
     return result.body;
   }
 }
 
-export function createFetchResourceProvider(baseUrl: string): MiniAppResourceProvider {
-  return new FetchResourceProvider(baseUrl);
+export function createFetchResourceProvider(
+  baseUrl: string,
+  digests?: Readonly<Record<string, string>>,
+): MiniAppResourceProvider {
+  return new FetchResourceProvider(baseUrl, digests);
 }

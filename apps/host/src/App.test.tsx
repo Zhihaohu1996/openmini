@@ -16,6 +16,28 @@ describe('App remote "load by URL" control', () => {
     cleanup();
   });
 
+  /**
+   * A fake Response.
+   *
+   * `arrayBuffer` is required because the loader reads the manifest with
+   * `captureBytes` — its digest has to be computed over the bytes that were
+   * served — so a mock implementing only `text()` no longer models the part
+   * of the Response API the loader uses.
+   */
+  function fakeResponse(text: string, status = 200) {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      text: () => Promise.resolve(text),
+      arrayBuffer: () => {
+        const bytes = new TextEncoder().encode(text);
+        return Promise.resolve(
+          bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+        );
+      },
+    };
+  }
+
   it('renders MiniAppHost with the fetched manifest on success', async () => {
     const manifestJson = JSON.stringify({
       schemaVersion: 1,
@@ -25,11 +47,16 @@ describe('App remote "load by URL" control', () => {
       entry: 'index.html',
       permissions: [],
     });
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: () => Promise.resolve(manifestJson),
-    }) as unknown as typeof fetch;
+    // The signature request 404s: an unsigned package on a static host.
+    global.fetch = vi
+      .fn()
+      .mockImplementation((url: URL | string) =>
+        Promise.resolve(
+          url.toString().endsWith('openmini.sig.json')
+            ? fakeResponse('', 404)
+            : fakeResponse(manifestJson),
+        ),
+      ) as unknown as typeof fetch;
 
     render(<App />);
     fireEvent.change(screen.getByLabelText('Mini App package URL'), {
@@ -42,11 +69,7 @@ describe('App remote "load by URL" control', () => {
   });
 
   it('shows the fetch-failure reason and does not render MiniAppHost on failure', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-      text: () => Promise.resolve(''),
-    }) as unknown as typeof fetch;
+    global.fetch = vi.fn().mockResolvedValue(fakeResponse('', 404)) as unknown as typeof fetch;
 
     render(<App />);
     fireEvent.change(screen.getByLabelText('Mini App package URL'), {

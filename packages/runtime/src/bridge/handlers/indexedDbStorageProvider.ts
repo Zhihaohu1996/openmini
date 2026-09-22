@@ -1,4 +1,5 @@
-import type { MiniAppStorageProvider } from './storageProvider';
+import { sumEntryBytes } from './storageProvider';
+import type { MiniAppStorageProvider, StorageEntry } from './storageProvider';
 
 const DEFAULT_DB_NAME = 'openmini-storage';
 const DB_VERSION = 1;
@@ -9,10 +10,6 @@ interface StoredEntry {
   appId: string;
   key: string;
   value: string;
-}
-
-function byteLength(value: string): number {
-  return new TextEncoder().encode(value).length;
 }
 
 function promisifyRequest<T>(request: IDBRequest<T>): Promise<T> {
@@ -74,6 +71,16 @@ export function createIndexedDbStorageProvider(
     return run(store);
   }
 
+  // The `byAppId` index scan that both `entries` and `getUsedBytes` need.
+  // Named local rather than `this.entries` — these methods get destructured.
+  async function readEntries(appId: string): Promise<StorageEntry[]> {
+    const stored = await withStore('readonly', (store) => {
+      const index = store.index(APP_ID_INDEX);
+      return promisifyRequest(index.getAll(IDBKeyRange.only(appId)) as IDBRequest<StoredEntry[]>);
+    });
+    return stored.map(({ key, value }) => ({ key, value }));
+  }
+
   return {
     async get(appId, key) {
       const entry = await withStore('readonly', (store) =>
@@ -86,16 +93,11 @@ export function createIndexedDbStorageProvider(
         promisifyRequest(store.put({ appId, key, value } satisfies StoredEntry)),
       );
     },
+    async entries(appId) {
+      return readEntries(appId);
+    },
     async getUsedBytes(appId) {
-      const entries = await withStore('readonly', (store) => {
-        const index = store.index(APP_ID_INDEX);
-        return promisifyRequest(index.getAll(IDBKeyRange.only(appId)) as IDBRequest<StoredEntry[]>);
-      });
-      let total = 0;
-      for (const entry of entries) {
-        total += byteLength(entry.key) + byteLength(entry.value);
-      }
-      return total;
+      return sumEntryBytes(await readEntries(appId));
     },
   };
 }

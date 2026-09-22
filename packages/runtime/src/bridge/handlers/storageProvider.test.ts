@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createInMemoryStorageProvider } from './storageProvider';
+import { createInMemoryStorageProvider, sumEntryBytes } from './storageProvider';
 
 describe('createInMemoryStorageProvider', () => {
   it('returns null for a key that was never set', async () => {
@@ -49,5 +49,54 @@ describe('createInMemoryStorageProvider', () => {
     await providerA.set('app-a', 'k', 'x');
     const providerB = createInMemoryStorageProvider();
     expect(await providerB.get('app-a', 'k')).toBe(null);
+  });
+});
+
+/**
+ * `entries` exists for the Phase 10 storage migration, which has to copy one
+ * scope's contents into another and report how much it found. It is also now
+ * the single source `getUsedBytes` is derived from, so the two cannot
+ * disagree about what is stored.
+ */
+describe('entries (in-memory)', () => {
+  it('returns nothing for an app that has stored nothing', async () => {
+    const provider = createInMemoryStorageProvider();
+    expect(await provider.entries('app-a')).toEqual([]);
+  });
+
+  it('returns every stored pair for one app', async () => {
+    const provider = createInMemoryStorageProvider();
+    await provider.set('app-a', 'k1', 'v1');
+    await provider.set('app-a', 'k2', 'v2');
+
+    const entries = await provider.entries('app-a');
+    expect([...entries].sort((a, b) => a.key.localeCompare(b.key))).toEqual([
+      { key: 'k1', value: 'v1' },
+      { key: 'k2', value: 'v2' },
+    ]);
+  });
+
+  it('does not leak entries belonging to a different app', async () => {
+    const provider = createInMemoryStorageProvider();
+    await provider.set('app-a', 'k', 'mine');
+    await provider.set('app-b', 'k', 'theirs');
+    expect(await provider.entries('app-a')).toEqual([{ key: 'k', value: 'mine' }]);
+  });
+
+  it('agrees with getUsedBytes, because the latter is derived from it', async () => {
+    const provider = createInMemoryStorageProvider();
+    await provider.set('app-a', 'k', '😀');
+    await provider.set('app-a', 'kk', 'ab');
+
+    expect(await provider.getUsedBytes('app-a')).toBe(
+      sumEntryBytes(await provider.entries('app-a')),
+    );
+  });
+
+  it('reflects an overwrite rather than reporting the key twice', async () => {
+    const provider = createInMemoryStorageProvider();
+    await provider.set('app-a', 'k', 'first');
+    await provider.set('app-a', 'k', 'second');
+    expect(await provider.entries('app-a')).toEqual([{ key: 'k', value: 'second' }]);
   });
 });

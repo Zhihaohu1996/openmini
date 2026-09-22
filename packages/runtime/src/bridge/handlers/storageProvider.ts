@@ -10,14 +10,47 @@
  * rather than a separately-tracked running total, so it can never drift from
  * what is actually persisted.
  */
+export interface StorageEntry {
+  readonly key: string;
+  readonly value: string;
+}
+
 export interface MiniAppStorageProvider {
   get(appId: string, key: string): Promise<string | null>;
   set(appId: string, key: string, value: string): Promise<void>;
+  /**
+   * Every entry stored under `appId`, in no guaranteed order.
+   *
+   * Added for the Phase 10 storage migration, which has to copy one scope's
+   * contents into another and report how much it found. `getUsedBytes` is
+   * now derived from this, so the two can never disagree about what is
+   * stored — previously each provider summed its own scan.
+   *
+   * Deliberately read-only: there is no `delete` and no `clear` on this
+   * interface. Migration copies and never removes, and an interface with no
+   * deletion on it cannot be used to add deletion casually later.
+   */
+  entries(appId: string): Promise<readonly StorageEntry[]>;
   getUsedBytes(appId: string): Promise<number>;
 }
 
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).length;
+}
+
+/**
+ * The quota accounting rule, in one place: key bytes plus value bytes, summed
+ * over real content rather than a separately-tracked running total, so it can
+ * never drift from what is actually persisted.
+ *
+ * Shared by every provider so they cannot disagree about what "used" means.
+ */
+export function sumEntryBytes(entries: readonly StorageEntry[]): number {
+  let total = 0;
+  for (const entry of entries) {
+    total += byteLength(entry.key) + byteLength(entry.value);
+  }
+  return total;
 }
 
 /**
@@ -32,6 +65,14 @@ export function createInMemoryStorageProvider(): MiniAppStorageProvider {
     return appStores.get(appId);
   }
 
+  // A named local rather than `this.entries`: these methods are routinely
+  // destructured off the provider, and `this` would be undefined the moment
+  // one of them was.
+  function readEntries(appId: string): StorageEntry[] {
+    const store = getAppStore(appId);
+    return store ? [...store].map(([key, value]) => ({ key, value })) : [];
+  }
+
   return {
     async get(appId, key) {
       return getAppStore(appId)?.get(key) ?? null;
@@ -44,16 +85,11 @@ export function createInMemoryStorageProvider(): MiniAppStorageProvider {
       }
       store.set(key, value);
     },
+    async entries(appId) {
+      return readEntries(appId);
+    },
     async getUsedBytes(appId) {
-      const store = getAppStore(appId);
-      if (!store) {
-        return 0;
-      }
-      let total = 0;
-      for (const [key, value] of store) {
-        total += byteLength(key) + byteLength(value);
-      }
-      return total;
+      return sumEntryBytes(readEntries(appId));
     },
   };
 }

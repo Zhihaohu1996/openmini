@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import { createIndexedDbStorageProvider } from './indexedDbStorageProvider';
+import { sumEntryBytes } from './storageProvider';
 
 // Each test uses a fresh database name so tests don't leak state into each
 // other via the shared fake-indexeddb global.
@@ -65,5 +66,53 @@ describe('createIndexedDbStorageProvider', () => {
     } finally {
       globalThis.indexedDB = originalIndexedDb;
     }
+  });
+});
+
+describe('entries (IndexedDB)', () => {
+  it('returns nothing for an app that has stored nothing', async () => {
+    const provider = createIndexedDbStorageProvider(freshDbName());
+    expect(await provider.entries('app-a')).toEqual([]);
+  });
+
+  it('returns every stored pair for one app, scanning the byAppId index', async () => {
+    const provider = createIndexedDbStorageProvider(freshDbName());
+    await provider.set('app-a', 'k1', 'v1');
+    await provider.set('app-a', 'k2', 'v2');
+
+    const entries = await provider.entries('app-a');
+    expect([...entries].sort((a, b) => a.key.localeCompare(b.key))).toEqual([
+      { key: 'k1', value: 'v1' },
+      { key: 'k2', value: 'v2' },
+    ]);
+  });
+
+  it('does not leak entries belonging to a different app', async () => {
+    const provider = createIndexedDbStorageProvider(freshDbName());
+    await provider.set('app-a', 'k', 'mine');
+    await provider.set('app-b', 'k', 'theirs');
+    expect(await provider.entries('app-a')).toEqual([{ key: 'k', value: 'mine' }]);
+  });
+
+  it('returns only key and value, never the internal appId column', async () => {
+    // The stored row carries appId as part of its composite primary key. That
+    // is a storage detail; a migration copying entries into another scope must
+    // not carry the old scope along inside the payload.
+    const provider = createIndexedDbStorageProvider(freshDbName());
+    await provider.set('app-a', 'k', 'v');
+    expect(Object.keys((await provider.entries('app-a'))[0] ?? {}).sort()).toEqual([
+      'key',
+      'value',
+    ]);
+  });
+
+  it('agrees with getUsedBytes, because the latter is derived from it', async () => {
+    const provider = createIndexedDbStorageProvider(freshDbName());
+    await provider.set('app-a', 'k', '😀');
+    await provider.set('app-a', 'kk', 'ab');
+
+    expect(await provider.getUsedBytes('app-a')).toBe(
+      sumEntryBytes(await provider.entries('app-a')),
+    );
   });
 });

@@ -70,3 +70,68 @@ describe('MiniAppHost', () => {
     expect(isDisabled(screen.getByRole('button', { name: 'Destroy' }))).toBe(true);
   });
 });
+
+/**
+ * The operator-facing half of package verification. The runtime decides
+ * whether a package loads; this decides what the person looking at the
+ * screen is told about it.
+ */
+describe('MiniAppHost provenance display', () => {
+  it('says nothing at all when there is no provenance', () => {
+    // A built-in fixture was rendered, not a package that was loaded and
+    // checked. Inventing a verification result for it in the UI would be
+    // the same lie that synthesizing a default provenance would be in the
+    // type.
+    render(<MiniAppHost manifestJson={validManifestJson} resourceProvider={okProvider} />);
+    expect(screen.queryByTestId('miniapp-provenance')).toBeNull();
+  });
+
+  it('names the trusted key for a verified package', () => {
+    render(
+      <MiniAppHost
+        manifestJson={validManifestJson}
+        resourceProvider={okProvider}
+        provenance={{
+          baseUrl: 'https://cdn.example.com/app/',
+          identity: { verified: true, id: 'com.openmini.test', keyId: 'KEYID123' },
+        }}
+      />,
+    );
+    const el = screen.getByTestId('miniapp-provenance');
+    expect(el.textContent).toMatch(/verified/);
+    expect(el.textContent).toContain('KEYID123');
+    expect(el.dataset.verified).toBe('true');
+  });
+
+  it('distinguishes unsigned from untrusted-key', () => {
+    // Two different situations: nobody vouched, versus somebody did but not
+    // anybody this host recognizes. Only the second names a key an operator
+    // could choose to add to a trust store.
+    const { unmount } = render(
+      <MiniAppHost
+        manifestJson={validManifestJson}
+        resourceProvider={okProvider}
+        provenance={{
+          baseUrl: 'https://cdn.example.com/app/',
+          identity: { verified: false, reason: 'unsigned' },
+        }}
+      />,
+    );
+    expect(screen.getByTestId('miniapp-provenance').textContent).toMatch(/unsigned/);
+    unmount();
+
+    render(
+      <MiniAppHost
+        manifestJson={validManifestJson}
+        resourceProvider={okProvider}
+        provenance={{
+          baseUrl: 'https://cdn.example.com/app/',
+          identity: { verified: false, reason: 'untrusted-key' },
+        }}
+      />,
+    );
+    const el = screen.getByTestId('miniapp-provenance');
+    expect(el.textContent).toMatch(/untrusted key/);
+    expect(el.dataset.verified).toBe('false');
+  });
+});

@@ -18,6 +18,7 @@ import { buildHelloSandboxHtml } from './miniapp/fixtures/hello-sandbox/buildFix
 import { HELLO_SANDBOX_MANIFEST_JSON } from './miniapp/fixtures/hello-sandbox/manifest';
 import { buildSelfNavigateHtml } from './miniapp/fixtures/self-navigate/buildFixture';
 import { SELF_NAVIGATE_MANIFEST_JSON } from './miniapp/fixtures/self-navigate/manifest';
+import { FIXTURE_TRUST_STORE } from './miniapp/fixtures/generated/trustConfig';
 import { MiniAppHost } from './miniapp/MiniAppHost';
 
 const INVALID_MANIFEST_JSON = '{ this is not valid json';
@@ -140,7 +141,10 @@ function RemoteMiniAppLoader() {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setState({ status: 'loading' });
-    const result = await loadMiniAppFromUrl(url);
+    // The host's trust configuration. A package claiming one of these ids
+    // must be signed by the key they name or it does not load at all --
+    // unsigned included, which is what stops a signature being strippable.
+    const result = await loadMiniAppFromUrl(url, { trustStore: FIXTURE_TRUST_STORE });
     if (result.ok) {
       setState({
         status: 'loaded',

@@ -47,6 +47,29 @@ export interface MiniAppHostProps {
 type DisplayState = SandboxState | 'idle';
 
 /**
+ * How a package's identity is described to the operator.
+ *
+ * Three outcomes, not two, and the wording keeps them apart. "unsigned"
+ * says nobody vouched for this package; "untrusted-key" says somebody did,
+ * but not anybody this host recognizes. Collapsing them into "not verified"
+ * would hide that the second one names a specific key that could be added
+ * to a trust store, while the first has nothing to add.
+ *
+ * Nothing is shown at all when provenance is `undefined`: this host did not
+ * load a package, it rendered a built-in fixture, and inventing a
+ * verification result for it would be the same lie in the UI that
+ * synthesizing a default provenance would have been in the type.
+ */
+function describeProvenance(provenance: PackageProvenance): string {
+  if (provenance.identity.verified) {
+    return `verified: signed by trusted key ${provenance.identity.keyId}`;
+  }
+  return provenance.identity.reason === 'unsigned'
+    ? 'unsigned: no signature, so nothing vouches for this package'
+    : 'untrusted key: signed, but not by a key this host trusts';
+}
+
+/**
  * Minimal host wiring for a single Mini App: gates the manifest, then lets
  * the caller load/destroy a sandbox and see its lifecycle state. This is
  * intentionally thin — it owns no RPC/capability logic, only the sandbox's
@@ -117,6 +140,11 @@ export function MiniAppHost({ manifestJson, resourceProvider, provenance }: Mini
   return (
     <div>
       <p data-testid="miniapp-status">status: {state}</p>
+      {provenance && (
+        <p data-testid="miniapp-provenance" data-verified={String(provenance.identity.verified)}>
+          {describeProvenance(provenance)}
+        </p>
+      )}
       <button
         type="button"
         onClick={handleLoad}

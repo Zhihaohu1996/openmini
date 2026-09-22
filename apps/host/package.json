@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "build:fixtures": "tsx scripts/build-bridge-demo-fixture.ts",
+    "build:fixtures": "tsx scripts/build-bridge-demo-fixture.ts && tsx scripts/build-signed-fixtures.ts",
     "dev": "pnpm run build:fixtures && vite",
     "build": "pnpm run build:fixtures && tsc --noEmit && vite build",
     "preview": "vite preview",

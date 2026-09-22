@@ -32,3 +32,9 @@ Thumbs.db
 # Claude Code local, machine-specific state (not shared project config)
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+# Signed verification fixtures + the trust config naming their ephemeral key
+apps/host/public/miniapps/signed-trusted/
+apps/host/public/miniapps/signed-untrusted/
+apps/host/public/miniapps/tampered/
+apps/host/public/miniapps/unsigned-trusted/
+apps/host/src/miniapp/fixtures/generated/

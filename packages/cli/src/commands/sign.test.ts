@@ -1,5 +1,5 @@
 import { SIGNATURE_FILENAME, parseSignatureEnvelope, verifySignatureFile } from '@openmini/shared';
-import { mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -192,8 +192,6 @@ describe('verifyPackage', () => {
     await writeFile(join(dir, 'gone.txt'), 'here', 'utf8');
     const keyFile = await makeKey();
     await signPackage({ packageDir: dir, keyFile });
-    await writeFile(join(dir, 'gone.txt'), 'here', 'utf8');
-    const { rm } = await import('node:fs/promises');
     await rm(join(dir, 'gone.txt'));
 
     const result = await verifyPackage(dir);

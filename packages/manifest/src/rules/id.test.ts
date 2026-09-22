@@ -71,7 +71,7 @@ describe('id length bound', () => {
     expect(issue?.message).toMatch(/at most/);
   });
 
-  it('still reports shape for a long id that is also malformed', () => {
+  it('reports length, not shape, for an id that breaks both rules', () => {
     // Length is checked first, so this documents which message wins: an id
     // that breaks both rules is reported as too long, since that is the one
     // an author has to fix before the other can even be assessed.

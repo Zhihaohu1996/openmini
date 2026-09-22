@@ -10,9 +10,17 @@ import { expect, test } from '@playwright/test';
  * on is between Node, which signs, and the browser, which verifies, and no
  * in-process test puts both of those on the same bytes.
  *
- * The five cases are the five outcomes the load path distinguishes. Two of
- * them are refusals that must not become "loaded but flagged", and one is a
- * success that must not become a refusal.
+ * Five scenarios: the three identity outcomes a load can report (verified,
+ * untrusted-key, unsigned), the registered-but-unsigned refusal, and a
+ * tampered package — which is not an identity outcome at all but a
+ * resource-digest failure, and so exercises a different check from the other
+ * four. Two of the five are refusals that must not become "loaded but
+ * flagged", and two are successes that must not become refusals.
+ *
+ * The remaining table row in docs/security/integrity.md — a signature that
+ * is present but does not verify — is covered by unit tests rather than
+ * here, since producing one needs a corrupted envelope rather than a
+ * buildable fixture.
  */
 
 const BASE = 'http://localhost:5173/miniapps';

@@ -109,7 +109,7 @@ The order in
 5. **An unregistered id may load unverified.** The host has expressed no opinion about who owns
    it, so there is nothing to fail closed against.
 
-The four outcomes:
+Every combination, and what it produces:
 
 | Signature | Id registered? | Result |
 | --- | --- | --- |

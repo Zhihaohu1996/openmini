@@ -501,3 +501,83 @@ describe('provenance === undefined keeps its pre-Phase-10 storage location', () 
     await expect(handlers.get?.({ key: 'secret' }, loaded)).resolves.toBeNull();
   });
 });
+
+/**
+ * The host opt-in for carrying pre-Phase-10 bare-id data forward. The
+ * migration module tests the rule; these test that the handler option
+ * actually reaches it, and that its default is off.
+ */
+describe('adoptLegacyScopeForIds', () => {
+  const APP_ID = 'com.openmini.test';
+  const ORIGIN = 'https://good.example';
+
+  const verifiedCtx = (): BridgeHandlerContext => ({
+    sandbox: {} as never,
+    manifest: makeManifest(APP_ID),
+    provenance: {
+      baseUrl: `${ORIGIN}/app/`,
+      identity: { verified: true, id: APP_ID, keyId: 'KEY-A' },
+    },
+  });
+
+  it('leaves legacy data alone by default', async () => {
+    // The safe default. Those bytes were written when any package at any
+    // origin could claim any id, so nothing vouches for them.
+    const provider = createInMemoryStorageProvider();
+    await provider.set(APP_ID, 'token', 'possibly-poisoned');
+
+    const handlers = createStorageHandlers({ provider });
+
+    await expect(handlers.get?.({ key: 'token' }, verifiedCtx())).resolves.toBeNull();
+    // And the legacy data is still there, untouched.
+    expect(await provider.entries(APP_ID)).toEqual([{ key: 'token', value: 'possibly-poisoned' }]);
+  });
+
+  it('carries legacy data forward when the operator opts that id in', async () => {
+    const provider = createInMemoryStorageProvider();
+    await provider.set(APP_ID, 'token', 'abc');
+
+    const handlers = createStorageHandlers({
+      provider,
+      adoptLegacyScopeForIds: new Set([APP_ID]),
+    });
+
+    await expect(handlers.get?.({ key: 'token' }, verifiedCtx())).resolves.toBe('abc');
+    // Copied, not moved.
+    expect(await provider.entries(APP_ID)).toEqual([{ key: 'token', value: 'abc' }]);
+  });
+
+  it('opting a different id in does not opt this one in', async () => {
+    const provider = createInMemoryStorageProvider();
+    await provider.set(APP_ID, 'token', 'abc');
+
+    const handlers = createStorageHandlers({
+      provider,
+      adoptLegacyScopeForIds: new Set(['com.example.someone-else']),
+    });
+
+    await expect(handlers.get?.({ key: 'token' }, verifiedCtx())).resolves.toBeNull();
+  });
+
+  it('does not let the opt-in reach an unverified package', async () => {
+    // Adoption is verified-ward only. An unsigned package must never be
+    // handed the legacy space, opt-in or not -- it has proved nothing.
+    const provider = createInMemoryStorageProvider();
+    await provider.set(APP_ID, 'token', 'abc');
+
+    const handlers = createStorageHandlers({
+      provider,
+      adoptLegacyScopeForIds: new Set([APP_ID]),
+    });
+    const unsignedCtx: BridgeHandlerContext = {
+      sandbox: {} as never,
+      manifest: makeManifest(APP_ID),
+      provenance: {
+        baseUrl: `${ORIGIN}/app/`,
+        identity: { verified: false, reason: 'unsigned' },
+      },
+    };
+
+    await expect(handlers.get?.({ key: 'token' }, unsignedCtx)).resolves.toBeNull();
+  });
+});

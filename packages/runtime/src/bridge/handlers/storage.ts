@@ -18,6 +18,30 @@ export interface StorageHandlerOptions {
   maxValueBytes?: number;
   /** Defaults to 524288 bytes (512 KiB). */
   maxTotalBytesPerApp?: number;
+  /**
+   * Package ids whose pre-Phase-10 bare-id storage the host operator has
+   * opted into carrying forward when the package loads verified.
+   *
+   * **Empty by default, and the default is the safe one.** The bare-id space
+   * is the one the id-collision gap let any package at any origin write to,
+   * so its bytes have no trustworthy writer. Adopting them automatically
+   * would hand a verified package whatever an earlier squatter left there —
+   * poison `com.example.notes`, wait for the real publisher to sign and
+   * register, and the verified app reads attacker-controlled values as its
+   * own. A confused deputy manufactured by the migration itself.
+   *
+   * An operator listing an id here is asserting "I know who was serving this
+   * id before". Nothing in the data can assert it for them, which is why this
+   * is a host decision and not an inference.
+   *
+   * Note this does not make the inherited data *attested*: a signature
+   * attests the package, never the data the package inherits. The migration
+   * record says so (`attested: false`).
+   *
+   * Adoption from the package's own origin-tier space is separate and
+   * automatic — see `storageMigration.ts`.
+   */
+  adoptLegacyScopeForIds?: ReadonlySet<string>;
 }
 
 function byteLength(value: string): number {
@@ -49,6 +73,7 @@ export function createStorageHandlers(
     maxKeyBytes = DEFAULT_MAX_KEY_BYTES,
     maxValueBytes = DEFAULT_MAX_VALUE_BYTES,
     maxTotalBytesPerApp = DEFAULT_MAX_TOTAL_BYTES_PER_APP,
+    adoptLegacyScopeForIds,
   } = options;
 
   function keyExceedsLimit(key: string): boolean {
@@ -100,6 +125,7 @@ export function createStorageHandlers(
       manifestId,
       provenance: ctx.provenance,
       maxTotalBytes: maxTotalBytesPerApp,
+      adoptLegacyScopeForIds,
     }).then((result): ResolvedScope => {
       if (!result.ok) {
         throw new Error(`storage scope refused: ${result.reason}`);

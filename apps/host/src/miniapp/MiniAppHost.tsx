@@ -27,6 +27,13 @@ export interface MiniAppHostProps {
    * `SandboxOptions.provenance`.
    */
   provenance?: PackageProvenance;
+  /**
+   * Package ids whose pre-Phase-10 bare-id storage this host will carry
+   * forward when the package loads verified. Off unless the operator says
+   * otherwise, because those bytes have no trustworthy writer — see
+   * `StorageHandlerOptions.adoptLegacyScopeForIds`.
+   */
+  adoptLegacyStorageForIds?: ReadonlySet<string>;
 }
 
 /**
@@ -75,7 +82,12 @@ function describeProvenance(provenance: PackageProvenance): string {
  * intentionally thin — it owns no RPC/capability logic, only the sandbox's
  * lifecycle and the DOM container it renders into. See docs/security/sandbox.md.
  */
-export function MiniAppHost({ manifestJson, resourceProvider, provenance }: MiniAppHostProps) {
+export function MiniAppHost({
+  manifestJson,
+  resourceProvider,
+  provenance,
+  adoptLegacyStorageForIds,
+}: MiniAppHostProps) {
   const gateResult = useMemo(() => gateManifest(manifestJson), [manifestJson]);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sandboxRef = useRef<MiniAppSandbox | null>(null);
@@ -114,7 +126,10 @@ export function MiniAppHost({ manifestJson, resourceProvider, provenance }: Mini
           port,
           provenance,
           handlers: {
-            storage: createStorageHandlers({ provider: createIndexedDbStorageProvider() }),
+            storage: createStorageHandlers({
+              provider: createIndexedDbStorageProvider(),
+              adoptLegacyScopeForIds: adoptLegacyStorageForIds,
+            }),
             navigation: createNavigationHandlers(),
             user: createUserHandlers(),
             // Plain http to loopback is a dev/test affordance only, so it is

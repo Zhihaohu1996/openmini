@@ -37,4 +37,6 @@ apps/host/public/miniapps/signed-trusted/
 apps/host/public/miniapps/signed-untrusted/
 apps/host/public/miniapps/tampered/
 apps/host/public/miniapps/unsigned-trusted/
+apps/host/public/miniapps/storage-signed/
+apps/host/public/miniapps/storage-unsigned/
 apps/host/src/miniapp/fixtures/generated/

@@ -1,5 +1,17 @@
+import { readFileSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
+
+const miniappsRoot = join(dirname(fileURLToPath(import.meta.url)), 'public', 'miniapps');
+
+/** Exactly the files a Mini App package exposes to the loader, and nothing else. */
+const SERVABLE_PACKAGE_FILES: Record<string, string> = {
+  'openmini.json': 'application/json',
+  'index.html': 'text/html',
+  'openmini.sig.json': 'application/json',
+};
 
 /**
  * Dev-server-only HTTP endpoints for the Phase 7 `network.fetch` e2e specs.
@@ -24,6 +36,38 @@ export function testApiPlugin(): Plugin {
 
   function recordHit(path: string): void {
     hits.set(path, (hits.get(path) ?? 0) + 1);
+  }
+
+  /**
+   * Serves a built Mini App package file from `public/miniapps/` on the
+   * cross-origin port.
+   *
+   * Deliberately narrow: only the two filenames the loader reads, only under
+   * `/miniapps/`, and with the path rejected outright if it contains a `..`
+   * segment. This is a dev-only convenience for one e2e, not a file server,
+   * and it should not become one by accident.
+   */
+  function serveMiniAppFile(url: string, res: ServerResponse): boolean {
+    const relative = url.slice('/miniapps/'.length);
+    if (relative.split('/').some((segment) => segment === '..' || segment === '')) {
+      return false;
+    }
+    const filename = relative.slice(relative.lastIndexOf('/') + 1);
+    const contentType = SERVABLE_PACKAGE_FILES[filename];
+    if (contentType === undefined) {
+      return false;
+    }
+
+    let body: Buffer;
+    try {
+      body = readFileSync(join(miniappsRoot, ...relative.split('/')));
+    } catch {
+      return false;
+    }
+    res.statusCode = 200;
+    res.setHeader('content-type', contentType);
+    res.end(body);
+    return true;
   }
 
   /** Returns false when the path isn't ours, so the caller can fall through. */
@@ -111,6 +155,26 @@ export function testApiPlugin(): Plugin {
 
       const crossOrigin = createServer((req, res) => {
         const url = pathOf(req.url);
+        // Phase 10: the same Mini App package, served from a genuinely
+        // different origin than the host page. That is the only way to show
+        // that two unsigned packages claiming one id get separate storage --
+        // the scope is keyed on origin, so two paths on 5173 would (by
+        // design) still collide, and a same-origin fixture proves nothing.
+        if (url.startsWith('/miniapps/')) {
+          // CORS on the miss as well as the hit. A package with no signature
+          // 404s its openmini.sig.json, and the loader deliberately treats a
+          // *network* failure as "no answer" rather than "unsigned" — so a
+          // CORS-blocked 404 fails the whole load instead of reading as an
+          // unsigned package. Setting the header here is what makes the miss
+          // a real 404 the browser will hand back.
+          res.setHeader('access-control-allow-origin', '*');
+          if (serveMiniAppFile(url, res)) {
+            return;
+          }
+          res.statusCode = 404;
+          res.end();
+          return;
+        }
         const path = url.startsWith('/test-api') ? url.slice('/test-api'.length) : url;
         if (!handle(path || '/', res)) {
           res.statusCode = 404;

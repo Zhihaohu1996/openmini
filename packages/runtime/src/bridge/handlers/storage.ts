@@ -1,6 +1,6 @@
 import { BridgeInvalidParamsError, BridgeStorageQuotaExceededError } from '../errors';
 import type { BridgeHandlerContext, BridgeMethodHandler } from '../types';
-import { deriveStorageScope } from './storageScope';
+import { deriveStorageScope, type StorageTier } from './storageScope';
 import { resolveStorageScope, type MigrationOutcome } from './storageMigration';
 import { createInMemoryStorageProvider, type MiniAppStorageProvider } from './storageProvider';
 
@@ -42,6 +42,26 @@ export interface StorageHandlerOptions {
    * automatic — see `storageMigration.ts`.
    */
   adoptLegacyScopeForIds?: ReadonlySet<string>;
+  /**
+   * Called once per scope, when that scope's resolution settles.
+   *
+   * Exists so a host can tell an operator which namespace a package ended up
+   * in and whether anything was carried into it. Phase 10 moves where a
+   * loaded package's data lives; a move nobody can observe is
+   * indistinguishable from data loss, and this is what makes it observable.
+   *
+   * Fires at most once per scope per handler instance, because the
+   * resolution is memoized. Never fires for a refused scope — there is no
+   * namespace to report.
+   */
+  onScopeResolved?: (resolution: StorageScopeResolution) => void;
+}
+
+export interface StorageScopeResolution {
+  /** The namespace the package's storage calls will use. */
+  readonly key: string;
+  readonly tier: StorageTier;
+  readonly outcome: MigrationOutcome;
 }
 
 function byteLength(value: string): number {
@@ -74,6 +94,7 @@ export function createStorageHandlers(
     maxValueBytes = DEFAULT_MAX_VALUE_BYTES,
     maxTotalBytesPerApp = DEFAULT_MAX_TOTAL_BYTES_PER_APP,
     adoptLegacyScopeForIds,
+    onScopeResolved,
   } = options;
 
   function keyExceedsLimit(key: string): boolean {
@@ -95,10 +116,7 @@ export function createStorageHandlers(
    */
   const resolutions = new Map<string, Promise<ResolvedScope>>();
 
-  interface ResolvedScope {
-    key: string;
-    outcome: MigrationOutcome;
-  }
+  type ResolvedScope = StorageScopeResolution;
 
   async function scopeFor(ctx: BridgeHandlerContext): Promise<ResolvedScope> {
     const manifestId = ctx.manifest.id;
@@ -130,7 +148,20 @@ export function createStorageHandlers(
       if (!result.ok) {
         throw new Error(`storage scope refused: ${result.reason}`);
       }
-      return { key: result.scope.key, outcome: result.outcome };
+      const resolution: ResolvedScope = {
+        key: result.scope.key,
+        tier: result.scope.tier,
+        outcome: result.outcome,
+      };
+      // Reported after the resolution settled, so a host never shows a tier
+      // the package is not actually using yet. A throwing observer must not
+      // take storage down with it.
+      try {
+        onScopeResolved?.(resolution);
+      } catch {
+        // A host's reporting bug is not the Mini App's problem.
+      }
+      return resolution;
     });
 
     resolutions.set(

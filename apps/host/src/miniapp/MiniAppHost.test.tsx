@@ -1,7 +1,7 @@
 import type { MiniAppResourceProvider } from '@openmini/runtime';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { MiniAppHost } from './MiniAppHost';
+import { describeStorageScope, MiniAppHost } from './MiniAppHost';
 
 afterEach(cleanup);
 
@@ -133,5 +133,74 @@ describe('MiniAppHost provenance display', () => {
     const el = screen.getByTestId('miniapp-provenance');
     expect(el.textContent).toMatch(/untrusted key/);
     expect(el.dataset.verified).toBe('false');
+  });
+});
+
+/**
+ * Phase 10 moves where a loaded package's data lives. A move nobody can see
+ * is indistinguishable from data loss, so the host states which namespace
+ * was used and what the migration did.
+ */
+describe('MiniAppHost storage scope display', () => {
+  it('shows nothing until a scope has actually been resolved', () => {
+    // Resolution happens on the first storage call, which needs a running
+    // sandbox. Before that there is no tier to report, and guessing one
+    // would be the same lie as inventing a verification result.
+    render(<MiniAppHost manifestJson={validManifestJson} resourceProvider={okProvider} />);
+    expect(screen.queryByTestId('miniapp-storage-scope')).toBeNull();
+  });
+
+  it('describes each tier, and says when data was inherited but not attested', () => {
+    // Exercised directly against the rendering rule rather than through a
+    // sandbox, because jsdom cannot run the srcdoc bootstrap that would
+    // produce a real storage call. The browser path is covered in e2e.
+    const cases = [
+      {
+        resolution: {
+          key: 'v1:id:com.openmini.test',
+          tier: 'verified' as const,
+          outcome: {
+            kind: 'adopted' as const,
+            source: 'v1:origin:https://good.example|com.openmini.test',
+            sourceTier: 'origin' as const,
+            entriesCopied: 3,
+            resumed: false,
+            attested: false as const,
+          },
+        },
+        expect: [/verified identity/, /carried 3 entries/, /not attested/],
+      },
+      {
+        resolution: {
+          key: 'v1:origin:https://evil.example|com.openmini.test',
+          tier: 'origin' as const,
+          outcome: { kind: 'not-applicable' as const },
+        },
+        expect: [/origin-bound \(unverified\)/],
+      },
+      {
+        resolution: {
+          key: 'com.openmini.test',
+          tier: 'embedded' as const,
+          outcome: { kind: 'not-applicable' as const },
+        },
+        expect: [/built-in fixture/],
+      },
+      {
+        resolution: {
+          key: 'v1:id:com.openmini.test',
+          tier: 'verified' as const,
+          outcome: { kind: 'not-adopted' as const, reason: 'legacy-not-opted-in' as const },
+        },
+        expect: [/nothing carried forward/, /legacy-not-opted-in/],
+      },
+    ];
+
+    for (const testCase of cases) {
+      const described = describeStorageScope(testCase.resolution);
+      for (const pattern of testCase.expect) {
+        expect(described).toMatch(pattern);
+      }
+    }
   });
 });

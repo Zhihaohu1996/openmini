@@ -85,6 +85,10 @@ export {
   DEFAULT_MAX_TOTAL_BYTES_PER_APP,
 } from './bridge/handlers/storage';
 export type { StorageHandlerOptions } from './bridge/handlers/storage';
+export type { StorageScopeResolution } from './bridge/handlers/storage';
+export { deriveStorageScope, legacyStorageScopeKey } from './bridge/handlers/storageScope';
+export type { StorageScope, StorageTier } from './bridge/handlers/storageScope';
+export type { MigrationOutcome, MigrationRecord } from './bridge/handlers/storageMigration';
 export { createInMemoryStorageProvider } from './bridge/handlers/storageProvider';
 export type { MiniAppStorageProvider } from './bridge/handlers/storageProvider';
 export { createIndexedDbStorageProvider } from './bridge/handlers/indexedDbStorageProvider';

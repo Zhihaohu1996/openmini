@@ -13,6 +13,7 @@ import type {
   MiniAppSandbox,
   PackageProvenance,
   SandboxState,
+  StorageScopeResolution,
 } from '@openmini/runtime';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -54,6 +55,43 @@ export interface MiniAppHostProps {
 type DisplayState = SandboxState | 'idle';
 
 /**
+ * Where this package's storage actually landed, and whether anything was
+ * carried into it.
+ *
+ * Phase 10 moves a loaded package's data from the bare `manifest.id` into a
+ * namespace derived from its provenance. A move nobody can observe is
+ * indistinguishable from data loss, so the host says which namespace was
+ * used and what the migration did — including when it deliberately did
+ * nothing.
+ *
+ * `attested: false` is surfaced rather than hidden: adopted data was
+ * inherited, and a signature attests the package, never the data the
+ * package inherits.
+ */
+export function describeStorageScope(resolution: StorageScopeResolution): string {
+  const tier =
+    resolution.tier === 'verified'
+      ? 'verified identity'
+      : resolution.tier === 'origin'
+        ? 'origin-bound (unverified)'
+        : 'built-in fixture';
+
+  const { outcome } = resolution;
+  switch (outcome.kind) {
+    case 'adopted':
+      return `storage: ${tier} — carried ${outcome.entriesCopied} entr${
+        outcome.entriesCopied === 1 ? 'y' : 'ies'
+      } from ${outcome.sourceTier} storage (inherited, not attested)`;
+    case 'already-complete':
+      return `storage: ${tier} — previously migrated`;
+    case 'not-adopted':
+      return `storage: ${tier} — nothing carried forward (${outcome.reason})`;
+    case 'not-applicable':
+      return `storage: ${tier}`;
+  }
+}
+
+/**
  * How a package's identity is described to the operator.
  *
  * Three outcomes, not two, and the wording keeps them apart. "unsigned"
@@ -92,6 +130,7 @@ export function MiniAppHost({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sandboxRef = useRef<MiniAppSandbox | null>(null);
   const [state, setState] = useState<DisplayState>('idle');
+  const [storageScope, setStorageScope] = useState<StorageScopeResolution | null>(null);
 
   useEffect(() => {
     return () => {
@@ -129,6 +168,7 @@ export function MiniAppHost({
             storage: createStorageHandlers({
               provider: createIndexedDbStorageProvider(),
               adoptLegacyScopeForIds: adoptLegacyStorageForIds,
+              onScopeResolved: setStorageScope,
             }),
             navigation: createNavigationHandlers(),
             user: createUserHandlers(),
@@ -158,6 +198,11 @@ export function MiniAppHost({
       {provenance && (
         <p data-testid="miniapp-provenance" data-verified={String(provenance.identity.verified)}>
           {describeProvenance(provenance)}
+        </p>
+      )}
+      {storageScope && (
+        <p data-testid="miniapp-storage-scope" data-tier={storageScope.tier}>
+          {describeStorageScope(storageScope)}
         </p>
       )}
       <button

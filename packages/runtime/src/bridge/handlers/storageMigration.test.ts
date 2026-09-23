@@ -429,7 +429,7 @@ describe('against a real IndexedDB backend', () => {
     await provider.set(ORIGIN_SCOPE, 'k', 'v');
     await resolve(provider);
 
-    for (const scope of [VERIFIED_SCOPE, ORIGIN_SCOPE, LEGACY_SCOPE, `v1:embedded:${APP_ID}`]) {
+    for (const scope of [VERIFIED_SCOPE, ORIGIN_SCOPE, LEGACY_SCOPE]) {
       const keys = (await provider.entries(scope)).map((entry) => entry.key);
       expect(keys).not.toContain(VERIFIED_SCOPE);
     }

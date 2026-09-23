@@ -317,6 +317,43 @@ describe('scope resolution at the handler', () => {
     );
   });
 
+  it('writes nothing anywhere when it refuses an identity mismatch', async () => {
+    // The negative control for the refusal above. Asserting only that the call
+    // rejects would not catch a future `scopeFor` that caught the refusal and
+    // fell back to the origin or legacy scope -- the call would still reject
+    // on one path while quietly writing on another. So this checks every
+    // namespace a fallback could plausibly reach, under BOTH ids involved in
+    // the mismatch.
+    const provider = createInMemoryStorageProvider();
+    const handlers = createStorageHandlers({ provider });
+    const claimedId = 'com.example.someone-else';
+    const ctx: BridgeHandlerContext = {
+      sandbox: {} as never,
+      manifest: makeManifest(APP_ID),
+      provenance: {
+        baseUrl: `${ORIGIN}/app/`,
+        identity: { verified: true, id: claimedId, keyId: 'K' },
+      },
+    };
+
+    await expect(handlers.set?.({ key: 'k', value: 'v' }, ctx)).rejects.toThrow(
+      /identity-mismatch/,
+    );
+
+    const reachableByAFallback = [
+      `v1:id:${APP_ID}`,
+      `v1:id:${claimedId}`,
+      `v1:origin:${ORIGIN}|${APP_ID}`,
+      `v1:origin:${ORIGIN}|${claimedId}`,
+      APP_ID, // the bare/legacy space, which the embedded tier also uses
+      claimedId,
+      'v1:meta:migration',
+    ];
+    for (const scope of reachableByAFallback) {
+      expect(await provider.entries(scope)).toEqual([]);
+    }
+  });
+
   it('does not serve the verified scope when the migration cannot complete', async () => {
     // "Never switch until conclusively complete" is what stops a half-copied
     // namespace from being served as if it were whole. A failing provider
@@ -405,5 +442,62 @@ describe('scope resolution at the handler', () => {
     await expect(
       handlers.set?.({ key: 'k', value: 'small' }, verifiedCtx()),
     ).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * The compatibility guarantee for hosts that render static fixtures.
+ *
+ * Phase 10 changes where a *loaded* package's data lives. It must not change
+ * where a fixture's data lives, because a fixture has no migration path --
+ * adoption only ever runs for the verified tier -- so a moved key would be
+ * silently orphaned IndexedDB contents with no route back.
+ */
+describe('provenance === undefined keeps its pre-Phase-10 storage location', () => {
+  const APP_ID = 'com.openmini.test';
+
+  it('reads data written at the bare manifest id before Phase 10', async () => {
+    // Seeded the way a pre-Phase-10 host would have written it: straight at
+    // the bare id, with no scope prefix.
+    const provider = createInMemoryStorageProvider();
+    await provider.set(APP_ID, 'existing', 'from an older release');
+
+    const handlers = createStorageHandlers({ provider });
+
+    await expect(handlers.get?.({ key: 'existing' }, makeContext(APP_ID))).resolves.toBe(
+      'from an older release',
+    );
+  });
+
+  it('writes back to the bare manifest id, not to a prefixed namespace', async () => {
+    const provider = createInMemoryStorageProvider();
+    const handlers = createStorageHandlers({ provider });
+
+    await handlers.set?.({ key: 'k', value: 'v' }, makeContext(APP_ID));
+
+    expect(await provider.entries(APP_ID)).toEqual([{ key: 'k', value: 'v' }]);
+    // And nothing was written to a versioned namespace.
+    expect(await provider.entries(`v1:embedded:${APP_ID}`)).toEqual([]);
+    expect(await provider.entries(`v1:id:${APP_ID}`)).toEqual([]);
+  });
+
+  it('stays isolated from a loaded package claiming the same id', async () => {
+    // Keeping the bare key is a compatibility choice, not a hole: a package
+    // loaded from a URL always carries provenance, so it lands in a versioned
+    // namespace and can never reach this one.
+    const provider = createInMemoryStorageProvider();
+    const handlers = createStorageHandlers({ provider });
+    const loaded: BridgeHandlerContext = {
+      sandbox: {} as never,
+      manifest: makeManifest(APP_ID),
+      provenance: {
+        baseUrl: 'https://evil.example/app/',
+        identity: { verified: false, reason: 'unsigned' },
+      },
+    };
+
+    await handlers.set?.({ key: 'secret', value: 'fixture-only' }, makeContext(APP_ID));
+
+    await expect(handlers.get?.({ key: 'secret' }, loaded)).resolves.toBeNull();
   });
 });

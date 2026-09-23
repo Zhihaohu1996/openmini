@@ -24,13 +24,24 @@ const keyOf = (result: ReturnType<typeof deriveStorageScope>): string => {
 };
 
 describe('tiers', () => {
-  it('puts a package that never went through a load in the embedded tier', () => {
-    // A static fixture or a test. There is nobody to be isolated from.
+  it('leaves a package that never went through a load at the bare id, exactly where Phase 9 put it', () => {
+    // A static fixture or a test. There is nobody to be isolated from, and
+    // moving it to a prefixed namespace would silently orphan the existing
+    // IndexedDB contents of every host that renders fixtures. Phase 10 leaves
+    // this path exactly where it was.
     const result = deriveStorageScope({ manifestId: APP_ID });
     expect(result).toEqual({
       ok: true,
-      scope: { key: `v1:embedded:${APP_ID}`, tier: 'embedded' },
+      scope: { key: APP_ID, tier: 'embedded' },
     });
+  });
+
+  it('gives the embedded tier the same key the legacy helper names', () => {
+    // Not a coincidence: the bare id is both where fixtures live and where
+    // pre-Phase-10 data lives, because before Phase 10 they were the same
+    // thing.
+    const result = deriveStorageScope({ manifestId: APP_ID });
+    expect(result.ok && result.scope.key).toBe(legacyStorageScopeKey(APP_ID));
   });
 
   it('puts a verified package in a namespace named by its id alone', () => {
@@ -218,16 +229,20 @@ describe('the reserved and legacy namespaces are unreachable', () => {
   });
 
   it('leaves the legacy namespace as the bare id, with no prefix', () => {
-    // Pre-Phase-10 data lives here and nothing writes here afterwards.
+    // Pre-Phase-10 data lives here, and so does the embedded tier.
     expect(legacyStorageScopeKey(APP_ID)).toBe(APP_ID);
   });
 
-  it('cannot be driven into the reserved or legacy namespace by any legal input', () => {
+  it('cannot be driven into the reserved namespace by any legal input', () => {
     // ID_PATTERN admits only [a-z0-9.-], so an id can never contain `:` or
     // `|`, and a serialized origin never contains `|`. That makes the
     // separators unambiguous by construction rather than by convention -- so
     // this sweeps legal ids (including ones that spell the tier names) and
     // asserts no combination escapes its own namespace.
+    //
+    // The bare-id space is deliberately NOT asserted unreachable: the
+    // embedded tier lives there on purpose, so that fixtures keep the storage
+    // location they had before Phase 10.
     const ids = [
       'com.example.a',
       'a.b',
@@ -255,9 +270,16 @@ describe('the reserved and legacy namespaces are unreachable', () => {
 
       for (const key of derived) {
         expect(key.startsWith(RESERVED_META_SCOPE_PREFIX)).toBe(false);
-        expect(key).not.toBe(legacyStorageScopeKey(manifestId));
-        // Every derived key is namespaced; none can be mistaken for a bare id.
+      }
+
+      // Only the embedded tier may be the bare id; every tier derived from a
+      // real package load must be namespaced, so no loaded package can ever
+      // reach the space fixtures and pre-Phase-10 data occupy.
+      const [embeddedKey, ...loadedKeys] = derived;
+      expect(embeddedKey).toBe(legacyStorageScopeKey(manifestId));
+      for (const key of loadedKeys) {
         expect(key.startsWith(`${STORAGE_SCOPE_VERSION}:`)).toBe(true);
+        expect(key).not.toBe(legacyStorageScopeKey(manifestId));
       }
 
       // Every tier, and every distinct origin, lands somewhere different.

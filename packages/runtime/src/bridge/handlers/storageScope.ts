@@ -25,7 +25,9 @@ import type { PackageProvenance } from '../../sandbox/types';
  * - `origin` -- identity was not established. The only thing that can
  *   distinguish two packages claiming one id is where they were served from.
  * - `embedded` -- no package load happened at all (a static fixture, a test).
- *   There is nobody to be isolated from.
+ *   There is nobody to be isolated from, and its key is the **bare
+ *   `manifestId`**: exactly where it was before Phase 10. See
+ *   `legacyStorageScopeKey`.
  */
 export type StorageTier = 'verified' | 'origin' | 'embedded';
 
@@ -40,15 +42,19 @@ export const STORAGE_SCOPE_VERSION = 'v1';
 
 const VERIFIED_PREFIX = `${STORAGE_SCOPE_VERSION}:id:`;
 const ORIGIN_PREFIX = `${STORAGE_SCOPE_VERSION}:origin:`;
-const EMBEDDED_PREFIX = `${STORAGE_SCOPE_VERSION}:embedded:`;
 
 /**
  * Host bookkeeping -- the migration record lives here.
  *
  * Reserved means unreachable: no input to `deriveStorageScope` can produce a
- * key under this prefix, because every derived key starts with one of the
- * three prefixes above. That is a property of the derivation, not a
- * convention, and a fuzz test pins it.
+ * key under this prefix, because a derived key is either prefixed `v1:id:` /
+ * `v1:origin:` or is a bare `manifestId`, and `ID_PATTERN` forbids `:` in an
+ * id. That is a property of the derivation, not a convention, and a fuzz test
+ * pins it.
+ *
+ * Note this is the *only* unreachable space. The bare-id space is
+ * deliberately reachable, by the `embedded` tier — see
+ * `legacyStorageScopeKey`.
  */
 export const RESERVED_META_SCOPE_PREFIX = `${STORAGE_SCOPE_VERSION}:meta:`;
 
@@ -72,13 +78,22 @@ export type DeriveStorageScopeResult =
   { ok: true; scope: StorageScope } | { ok: false; reason: StorageScopeRefusal };
 
 /**
- * The namespace pre-Phase-10 data sits in: the bare `manifest.id`, with no
- * prefix at all.
+ * The bare `manifest.id`, with no prefix at all.
  *
- * Nothing writes here after Phase 10. It is readable only as a migration
- * source, and only under the rules in `storageMigration.ts` -- the bytes in it
- * were written when any package could claim any id, so they have no
- * trustworthy writer.
+ * This is where **all** storage lived before Phase 10, and it is still where
+ * the `embedded` tier lives — deliberately. Moving the embedded tier to a
+ * prefixed namespace would have silently orphaned the existing IndexedDB
+ * contents of every host that renders static fixtures, for no benefit: a
+ * package loaded from a URL always carries provenance, so it can never reach
+ * this key, and a package with no provenance was never isolated from another
+ * with the same id anyway. Phase 10 is supposed to leave that path exactly
+ * where it was, so it does.
+ *
+ * The same key is therefore also the *legacy* migration source: for a
+ * remotely-loaded package that predates Phase 10, its data is here. Reading
+ * it as a source is gated behind an explicit per-id host opt-in, because the
+ * bytes here were written when any package could claim any id and so have no
+ * trustworthy writer. See `storageMigration.ts`.
  */
 export function legacyStorageScopeKey(manifestId: string): string {
   return manifestId;
@@ -118,7 +133,10 @@ export function deriveStorageScope(input: {
   const { manifestId, provenance } = input;
 
   if (provenance === undefined) {
-    return { ok: true, scope: { key: `${EMBEDDED_PREFIX}${manifestId}`, tier: 'embedded' } };
+    // The bare id, unchanged from before Phase 10. Expressed through the
+    // legacy helper rather than repeating the expression, because the two
+    // being the same key is the point rather than a coincidence.
+    return { ok: true, scope: { key: legacyStorageScopeKey(manifestId), tier: 'embedded' } };
   }
 
   if (provenance.identity.verified) {

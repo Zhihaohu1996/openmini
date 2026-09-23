@@ -23,8 +23,9 @@ organization can run it without depending on a single vendor.
 
 ## Status
 
-**Phase 9: package integrity and identity.** The project now has a working
-end-to-end path from source to a verified, sandboxed Mini App:
+**Phase 10: verified identity as a storage boundary.** The project now has a
+working end-to-end path from source to a verified, sandboxed Mini App whose
+data is scoped to the identity it proved:
 
 - **Phase 2** — the [`openmini.json` manifest format](docs/manifest.md),
   parsed and validated by `@openmini/manifest`.
@@ -42,11 +43,15 @@ end-to-end path from source to a verified, sandboxed Mini App:
   a detached `openmini.sig.json` (ECDSA P-256), `keygen`/`sign`/`verify` CLI
   commands, and load-time verification against a host trust store that fails
   closed for registered ids.
+- **Phase 10** — [storage scoped by package provenance](docs/security/bridge.md):
+  a verified package's data lives under its identity, an unverified
+  package's under the origin it was served from, with a crash-safe migration
+  for packages that become verified.
 
 Still to come: key distribution and revocation, real user/auth/identity, and
-multi-view routing. Phase 9 verifies packages but does not distribute keys —
-a host operator configures trusted keys by hand — and `manifest.id` remains
-a self-asserted value for any id the host has **not** registered. See
+multi-view routing. A host operator still configures trusted keys by hand,
+and two **unsigned** packages served from the **same origin** that claim one
+id still share storage. See
 [docs/security/integrity.md](docs/security/integrity.md) and
 [docs/security/bridge.md](docs/security/bridge.md) for the boundaries the
 current phases deliberately do **not** provide.

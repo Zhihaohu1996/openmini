@@ -1,4 +1,4 @@
-# Mini App JS Bridge & Capability API — Phase 4 (+ Phase 5 persistent storage, Phase 7 network)
+# Mini App JS Bridge & Capability API — Phase 4 (+ Phase 5 persistent storage, Phase 7 network, Phase 10 storage scoping)
 
 Phase 4 layers a small, deny-by-default RPC protocol on top of the Phase 3
 [sandbox boundary and handshake](sandbox.md), giving a Mini App a real (if
@@ -238,38 +238,87 @@ which provider is plugged in):
   to close this gap — documented here the same way Phase 3/4 documented their
   own limits, rather than silently glossed over.
 
-- **Known limitation — storage is keyed on a self-asserted identity, for
-  unregistered ids.** Every key is scoped to `manifest.id`. Phase 9 narrowed
-  this but did not close it, and the difference matters:
+- **Storage is scoped by package provenance (Phase 10).** Every key is scoped
+  to a namespace derived from *who the package turned out to be*, not to the
+  self-asserted `manifest.id` alone. Implemented in
+  [`storageScope.ts`](../../packages/runtime/src/bridge/handlers/storageScope.ts);
+  the normative rules are below.
 
-  - For an id **registered** in the host's trust store, a package claiming
-    that id must be signed by a key the host registered for it or it does not
-    load at all. An impostor never reaches the bridge, so it never reaches
-    that id's storage. See [integrity.md](integrity.md).
-  - For an **unregistered** id — which is every id by default — nothing has
-    changed. A package loaded from anywhere that declares
-    `"id": "com.example.other-app"` still reads and writes that app's stored
-    data, because nothing in the host claims to know who owns that id.
+  | Provenance | Namespace | |
+  |---|---|---|
+  | `identity.verified === true` | `v1:id:<id>` | Only a package signed by a key the host registered for that id can reach it. |
+  | `identity.verified === false` (`unsigned` or `untrusted-key`) | `v1:origin:<origin>\|<id>` | Identity is unestablished, so the namespace is qualified by the origin the package was served from. |
+  | `provenance === undefined` | `<id>` (bare) | No package load happened — a static fixture or a test. **Unchanged from before Phase 10.** |
 
-  The storage handler deliberately does not consult `ctx.provenance`: gating
-  storage on it would orphan the data of every currently-unsigned package, so
-  it needs a migration story rather than a conditional. The remaining gap is
-  pinned by
-  [`storageIdCollision.test.ts`](../../packages/runtime/src/bridge/storageIdCollision.test.ts).
+  Three rules worth stating, because in each case the obvious alternative is
+  wrong:
 
-  It remains bounded by the trust model as well as by registration: loading a
-  Mini App by URL is a host-operator action, documented in
-  [sandbox.md](sandbox.md) as "equivalent in trust terms to a user typing a
-  URL into their own browser's address bar". So it is not an unauthenticated
-  attack — but for an unregistered id it still means **`manifest.id` is not a
-  security boundary**, and storage under one must not be treated as a place
-  only one app can reach.
+  - **The verified namespace names the id, never the `keyId`.** A trust store
+    entry is an array of acceptable keys precisely because rotation means two
+    are valid at once; naming the key would make routine key rotation move an
+    app's data.
+  - **An unverified package is scoped by origin, not by path.** Anyone who can
+    publish at `https://host/evil/` can publish at `https://host/app/`, so a
+    path buys no isolation while breaking any app that moves.
+  - **A verified identity whose id disagrees with the manifest is refused**,
+    and never downgraded to the origin namespace. Falling back would turn an
+    inconsistency into a route to a weaker namespace.
 
-  Phase 9 supplied the mechanism that closes this — registering an id in the
-  host's trust store makes it genuinely owned — so the remaining work is
-  per-id configuration rather than a missing capability. Until an id is
-  registered, do not store anything under `openmini.storage.*` whose
-  disclosure to another loaded package would matter, notably auth tokens.
+  **Known limitation — same-origin collisions remain.** Two *unsigned*
+  packages served from the **same origin** that both declare one id still
+  share a store. They are already mutually trusting, and a path is not a
+  security boundary here. Pinned by
+  [`storageIdCollision.test.ts`](../../packages/runtime/src/bridge/storageIdCollision.test.ts),
+  which also documents what Phase 10 closed.
+
+  It remains bounded by the trust model as well: loading a Mini App by URL is
+  a host-operator action, documented in [sandbox.md](sandbox.md) as
+  "equivalent in trust terms to a user typing a URL into their own browser's
+  address bar".
+
+  So for an unsigned package sharing an origin with another that claims its
+  id, `manifest.id` is still not a security boundary. Registering an id, or
+  serving packages from distinct origins, are both sufficient to close that.
+
+  What this means for secrets has narrowed but not vanished. Storage under a
+  **registered** id, or under an origin no other package shares, is reachable
+  only by that package. Under an unregistered id on a shared origin it is
+  not, so do not put anything there whose disclosure to another package on
+  that origin would matter — notably auth tokens. That is one reason real
+  user identity is sequenced *after* package identity rather than before it:
+  a credential needs somewhere only its owner can reach, and Phase 10 is what
+  supplies that.
+
+- **Migration of existing data.** A package that becomes verified carries its
+  previous storage forward, under a crash-safe protocol
+  ([`storageMigration.ts`](../../packages/runtime/src/bridge/handlers/storageMigration.ts)).
+
+  The intent record is written **before** the first copied entry. That is what
+  distinguishes a half-copied namespace from one that simply has data in it: a
+  partial target always carries a `pending` record, so a target with data and
+  no record can only be data the app wrote itself, and is never adopted into.
+  An interrupted migration resumes; adoption **copies and never deletes**, so
+  a rollback to a pre-Phase-10 host still finds its data; and at most one
+  source is adopted — a second is reported, never merged.
+
+  Two sources, treated differently by how much is known about their writer:
+
+  - The package's own **origin-tier** namespace is adopted automatically. To
+    have written it you had to be served from the origin the package is being
+    served from now.
+  - The **bare-id** namespace requires explicit per-id host opt-in
+    (`adoptLegacyScopeForIds`). Those bytes were writable by any package at
+    any origin, so nothing identifies their writer; adopting them
+    automatically would hand a verified package whatever an earlier squatter
+    left behind.
+
+  **A signature attests the package, never the data the package inherits.**
+  Adoption preserves continuity and confers no attestation; the migration
+  record records `attested: false`, and the host surfaces it.
+
+  A package's storage namespace is reported to the operator by
+  `MiniAppHost`, because a move nobody can observe is indistinguishable from
+  data loss.
 
 ## Mini App SDK (`@openmini/sdk`)
 

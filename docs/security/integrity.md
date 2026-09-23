@@ -183,24 +183,34 @@ its output. Keep it out of your package directory and out of version control.
   ignored field — unknown fields are rejected — but nor is it a supported one.
 - **Trust on first use, or any automatic trust.** An unregistered id is never promoted to
   verified.
-- **Protection for unregistered ids.** See below.
+- **Verified identity for unregistered ids.** An unregistered id never loads as verified, whatever
+  it is signed with. Phase 10 does give such packages *storage* isolation by origin — see below —
+  but that is separation, not identity: it says two packages are different, never who either one
+  is.
 
-## Known limitation: `manifest.id` is still not a boundary for unregistered ids
+## What verification buys in storage (Phase 10)
 
-[bridge.md](bridge.md) records that `openmini.storage.*` scopes keys to `manifest.id` while
-nothing verified a package's entitlement to that id. Phase 9 **narrows** this rather than
-closing it:
+This document's Phase 9 edition recorded that `openmini.storage.*` scoped keys to a
+self-asserted `manifest.id`, and that verification narrowed the resulting collision without
+closing it. Phase 10 closed most of it, by making the provenance this phase produces decide the
+storage namespace:
 
-- For a **registered** id, an impostor is now refused at load. It never reaches the bridge, so it
-  never reaches that id's storage. The protection is a closed door, not a check inside storage.
-- For an **unregistered** id, nothing has changed. Two unsigned packages from different origins
-  that both declare `com.example.notes` still share one store.
+| Provenance | Namespace |
+|---|---|
+| `verified: true` | `v1:id:<id>` — reachable only by a package signed with a registered key |
+| `verified: false` | `v1:origin:<origin>\|<id>` — qualified by where it was served from |
+| `undefined` (static fixture) | the bare `<id>`, unchanged |
 
-The storage handler does not consult `ctx.provenance`, deliberately. Gating storage on it would
-orphan the data of every currently-unsigned package, so it needs a migration story rather than a
-conditional. The gap is pinned by
-[`storageIdCollision.test.ts`](../../packages/runtime/src/bridge/storageIdCollision.test.ts), so
-that closing it later breaks a test that names what changed.
+**Still open:** two *unsigned* packages served from the **same origin** that both claim one id
+share a store. Pinned by
+[`storageIdCollision.test.ts`](../../packages/runtime/src/bridge/storageIdCollision.test.ts).
 
-Until an id is registered, **do not store anything under `openmini.storage.*` whose disclosure to
-another loaded package would matter.**
+**Signing does not attest inherited data.** A package that becomes verified can carry its
+previous storage forward, and that migration confers no attestation on the bytes it copies — a
+signature attests the package, never the data the package inherits. Adoption from the bare-id
+namespace additionally requires an explicit per-id host opt-in, because those bytes were
+writable by any package at any origin.
+
+The normative rules, the migration protocol and the residual limitation live in
+[bridge.md](bridge.md#persistent-storage-phase-5); this section records only what package
+verification contributes to them.

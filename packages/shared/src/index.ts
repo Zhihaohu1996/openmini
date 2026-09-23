@@ -45,6 +45,23 @@ export type {
 } from './integrity';
 
 export {
+  TRUST_CONFIG_FILENAME,
+  TRUST_CONFIG_VERSION,
+  formatTrustConfigIssues,
+  parseTrustConfig,
+  validateTrustConfig,
+} from './trustConfig';
+export type {
+  TrustConfig,
+  TrustConfigIssue,
+  TrustConfigIssueCode,
+  TrustConfigPackageEntry,
+  TrustConfigValidationResult,
+  TrustedKeyEntry,
+  TrustedKeyStatus,
+} from './trustConfig';
+
+export {
   OPENMINI_BRIDGE_CHANNEL,
   OPENMINI_BRIDGE_VERSION,
   BRIDGE_NAMESPACES,

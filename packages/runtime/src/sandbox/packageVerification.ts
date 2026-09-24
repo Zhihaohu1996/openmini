@@ -1,4 +1,5 @@
 import { bytesToBase64, digestsEqual, sha256Base64, verifySignatureFile } from '@openmini/shared';
+import type { TrustedKeyEntry } from '@openmini/shared';
 import type { PackageProvenance } from './types';
 
 /**
@@ -13,13 +14,47 @@ import type { PackageProvenance } from './types';
  *
  * Keyed by `manifest.id` and holding **complete base64 SPKI public keys**,
  * never keyIds. A keyId is a label an attacker can copy; only the key
- * material is the anchor. See @openmini/shared's integrity module.
+ * material is the anchor. That holds for the richer entry form too: a
+ * `TrustedKeyEntry` may carry a `keyId` for a human reading the host's
+ * configuration, and nothing in this module ever reads it.
+ * See @openmini/shared's integrity and trustConfig modules.
  *
  * An id present here is *registered*: the host is asserting it knows who
  * owns that id. That assertion is what makes fail-closed possible, and it is
  * the only thing that does.
  */
-export type PackageTrustStore = Readonly<Record<string, readonly string[]>>;
+export type PackageTrustStore = Readonly<Record<string, readonly PackageTrustEntry[]>>;
+
+/**
+ * One registered key, in either of the two spellings a host may use.
+ *
+ * A bare `string` is the **legacy** form: the complete base64 SPKI key and
+ * nothing else, which is what this store held before Phase 11. It still
+ * means exactly what it meant then — a key that may sign — and
+ * `normalizeTrustEntry` is where that is written down once.
+ *
+ * Supporting it is not a grace period with an expiry attached. Phase 11
+ * deliberately does not set the point at which the legacy form is deprecated
+ * or removed; that belongs to whichever later phase first has a reason to
+ * force it. Until then this is a supported spelling, not a tolerated one.
+ * See docs/plans/phase-11.md.
+ */
+export type PackageTrustEntry = string | TrustedKeyEntry;
+
+/**
+ * Resolves either spelling to the full entry form.
+ *
+ * A bare string becomes `active`, which is the whole of the backward
+ * compatibility story: before Phase 11 there was no way to register a key
+ * except as one that may sign, so that is what a legacy entry must continue
+ * to mean. Note the asymmetry with the trust *config* file, where an omitted
+ * `status` is rejected rather than defaulted — there the operator is writing
+ * a lifecycle document and silence is ambiguous, whereas here the absence of
+ * the field is the absence of the concept.
+ */
+export function normalizeTrustEntry(entry: PackageTrustEntry): TrustedKeyEntry {
+  return typeof entry === 'string' ? { publicKey: entry, status: 'active' } : entry;
+}
 
 export interface VerifyPackageInput {
   /** Normalized package root, carried into the resulting provenance. */
@@ -32,6 +67,28 @@ export interface VerifyPackageInput {
   signatureText: string | undefined;
   trustStore?: PackageTrustStore;
 }
+
+/**
+ * Why a package was refused, as a value rather than as prose.
+ *
+ * `reason` stays the human sentence and is what an operator reads. This is
+ * what code should branch on: the host renders an untrusted key differently
+ * from an unsigned package because the remedies differ, and telling them
+ * apart by matching on the message text would make the wording load-bearing.
+ * `openmini verify` already separates its two failures for the same reason —
+ * see docs/cli.md.
+ *
+ * Phase 11 W2 introduces this over the refusals that already existed, with
+ * every message left byte-for-byte unchanged. W3 adds the revoked-key case.
+ */
+export type PackageRefusalCode =
+  | 'unsigned-registered'
+  | 'signature-invalid'
+  | 'id-mismatch'
+  | 'version-mismatch'
+  | 'manifest-not-covered'
+  | 'manifest-digest-mismatch'
+  | 'untrusted-key';
 
 export type PackageVerificationOutcome =
   | {
@@ -46,7 +103,7 @@ export type PackageVerificationOutcome =
        */
       digests?: Readonly<Record<string, string>>;
     }
-  | { ok: false; reason: string };
+  | { ok: false; code: PackageRefusalCode; reason: string };
 
 const MANIFEST_FILENAME = 'openmini.json';
 
@@ -96,6 +153,7 @@ export async function verifyPackage(
     if (isRegistered) {
       return {
         ok: false,
+        code: 'unsigned-registered',
         reason: `package "${manifestId}" is registered as requiring a trusted signature, but is unsigned`,
       };
     }
@@ -109,19 +167,25 @@ export async function verifyPackage(
   // failure for registered and unregistered ids alike.
   const verified = await verifySignatureFile(signatureText);
   if (!verified.ok) {
-    return { ok: false, reason: `signature verification failed: ${verified.reason}` };
+    return {
+      ok: false,
+      code: 'signature-invalid',
+      reason: `signature verification failed: ${verified.reason}`,
+    };
   }
 
   // Step 2.
   if (verified.payload.id !== manifestId) {
     return {
       ok: false,
+      code: 'id-mismatch',
       reason: `signature is for "${verified.payload.id}" but the manifest declares "${manifestId}"`,
     };
   }
   if (verified.payload.version !== manifestVersion) {
     return {
       ok: false,
+      code: 'version-mismatch',
       reason: `signature is for version "${verified.payload.version}" but the manifest declares "${manifestVersion}"`,
     };
   }
@@ -131,22 +195,34 @@ export async function verifyPackage(
   if (manifestDigest === undefined) {
     return {
       ok: false,
+      code: 'manifest-not-covered',
       reason: `signature does not cover ${MANIFEST_FILENAME}, so the package's permissions are unsigned`,
     };
   }
   if (!digestsEqual(await sha256Base64(manifestBytes), manifestDigest)) {
-    return { ok: false, reason: `${MANIFEST_FILENAME} does not match its signed digest` };
+    return {
+      ok: false,
+      code: 'manifest-digest-mismatch',
+      reason: `${MANIFEST_FILENAME} does not match its signed digest`,
+    };
   }
 
   // Step 4/5. Trust is decided on the complete key material, never on
   // keyId: a keyId is a label, and it costs an attacker nothing to claim
   // somebody else's.
   const signingKey = bytesToBase64(verified.publicKeySpki);
-  const trusted = registeredKeys?.some((key) => key === signingKey) ?? false;
+  // Matched on key material only. `status` is carried through the type but
+  // deliberately not read here: W2 widens the representation and changes no
+  // outcome, and W3 is the single commit where a revoked key starts refusing.
+  // Splitting them that way keeps the behavioural change to one reviewable
+  // diff instead of hiding it inside a type migration.
+  const trusted =
+    registeredKeys?.some((entry) => normalizeTrustEntry(entry).publicKey === signingKey) ?? false;
 
   if (isRegistered && !trusted) {
     return {
       ok: false,
+      code: 'untrusted-key',
       reason: `package "${manifestId}" is registered, but is signed by a key the host does not trust (keyId ${verified.keyId})`,
     };
   }

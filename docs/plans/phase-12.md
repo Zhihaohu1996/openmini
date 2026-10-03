@@ -1,11 +1,15 @@
-# Phase 12 — session-scoped user identity
+# Phase 12 — session-scoped user identity (completed)
 
-**Status: approved, implementation not started.** Approved on 2026-10-03 against base `c443cfc`.
+**Status: complete.** Approved on 2026-10-03 against base `c443cfc`; delivered in eight work
+items, W1-W8.
 
 This file is the approved plan. It is written *before* implementation deliberately, so that the
 scope, ordering, invariants and exit criteria survive across sessions and do not have to be
-reconstructed from conversation memory. At close-out it becomes the phase record, in the same
-form as [phase-9.md](phase-9.md), [phase-10.md](phase-10.md) and [phase-11.md](phase-11.md).
+reconstructed from conversation memory. It is now the authoritative **phase record**, in the same form as [phase-9.md](phase-9.md),
+[phase-10.md](phase-10.md) and [phase-11.md](phase-11.md). The plan text below is preserved as
+it was approved — including the parts written in the future tense — and the outcome is recorded
+in ["What actually shipped"](#what-actually-shipped) at the end, which is authoritative where
+the two differ.
 
 Living documentation for the delivered system will be
 [security/bridge.md](../security/bridge.md). This file is the plan and then the history; it is
@@ -316,3 +320,226 @@ non-goals exist to prevent.
   containment whose regression once deleted `packages/` for real. A CI matrix is the fix; this
   is a verification gap rather than tidiness.
 - `SECURITY.md`, a CI matrix, and the `.gitattributes` / CRLF item declined three phases running.
+
+---
+
+# What actually shipped
+
+Everything below this line was written at close-out and is authoritative where it differs from
+the plan above.
+
+## Commit sequence
+
+Base: `c443cfc` — Phase 11 close-out, CI recorded.
+
+| Commit | Item | Type | What it delivered |
+| --- | --- | --- | --- |
+| `44456d1` | — | `docs` | The approved plan above, recorded before implementation. |
+| `5c25bb8` | W1 | `feat(shared)` | `UserProfile` and `ANONYMOUS_USER_PROFILE` in [bridge/user.ts](../../packages/shared/src/bridge/user.ts). The shape existed twice before — `StubUserProfile` in the runtime, `OpenMiniUserProfile` in the SDK — structurally identical and related by nothing; both survive as deprecated aliases. The anonymous value is one frozen constant, so the three reasons for withholding cannot drift apart. **Wired to nothing.** |
+| `511e1df` | W2 | `feat(runtime)` | `createUserHandlers({ profile })` takes the host profile; the decision moves into the pure `resolveUserProfile(provenance, hostProfile)`, which reads neither yet. The handler reaches its **final** shape here, so W3 changes a function body and no signature. **No behaviour change**, pinned by four tests that W3 breaks. |
+| `6cf020a` | W3 | `feat(runtime)` | **The flip.** One production file, one function body. A verified package receives the profile; everything else receives the anonymous constant. |
+| `2fc88af` | W4 | `test(runtime)` | The gate over the real chain — real P-256 keys → real signature → `verifyPackage` → the real dispatcher over a real `MessageChannel` → the handler. No provenance written by hand. **No production code.** |
+| `d7f1b07` | W5 | `feat(host)` | The host supplies a synthetic demo profile and reports what it shared or withheld. Three fixtures (`user-signed`, `user-unsigned`, `user-unpermitted`) built from one Mini App source. |
+| `9c81492` | W6 | `fix(cli)` | The `init` scaffold defect: the generated manifest and entry script disagreed about what the app may do. |
+| `c794e6e` | W7 | `test(e2e)` | Browser evidence through the host's real "Load by URL" flow. **No production code.** |
+| *this commit* | W8 | `docs` | Living documentation narrowed, ledger repaired, this file converted into the phase record. |
+
+Machinery landed before the flip, as in Phases 10 and 11: no commit in history has the shape "a
+legitimate package stopped working".
+
+## The security boundary, precisely
+
+| Situation | Result |
+| --- | --- |
+| Verified **and** declares `user` | the host-supplied profile |
+| Verified, does **not** declare `user` | `PERMISSION_DENIED` — a refusal, not an anonymous profile |
+| Unverified (`unsigned` or `untrusted-key`), declares `user` | a **successful** call returning the anonymous profile |
+| No provenance at all (fixture, test) | the anonymous profile |
+| Verified, but the host supplied no profile | the anonymous profile |
+| Signing key revoked for the id | never reaches the handler — the load is refused and no provenance exists |
+
+Two independent gates, neither substituting for the other: the manifest's `user` permission,
+enforced by the dispatcher before any handler runs, and `identity.verified`, enforced inside
+`resolveUserProfile`.
+
+The condition is `identity.verified`, deliberately **not** `provenance !== undefined`. Those
+differ precisely where it matters: an unsigned or untrusted-key package *has* provenance and is
+not verified, so a presence check would admit the whole origin tier while still passing every
+fixture-shaped test.
+
+**No identity is persisted.** The profile lives for the lifetime of the dispatcher and is written
+nowhere. `sandbox.destroy()` therefore ends its lifetime completely — sign-out needs no deletion
+because nothing was stored.
+
+## What Phase 12 did not introduce
+
+Verified against the diff rather than asserted: no persistence of any kind, no login flow, no
+OAuth, no tokens, no credentials, no identity provider, no per-user storage, no `v2:` scope, and
+**no change to any load outcome**.
+
+`git diff c443cfc..HEAD` touches these production files and no others:
+`shared/src/bridge/user.ts`, `shared/src/index.ts`, `runtime/src/bridge/handlers/user.ts`,
+`sdk/src/api/user.ts`, `apps/host/src/App.tsx`, `apps/host/src/miniapp/MiniAppHost.tsx`,
+`apps/host/scripts/build-signed-fixtures.ts`, the new `user-probe` fixture source, and
+`cli/src/commands/init.ts`.
+
+Untouched, confirmed by an empty diff: `packageVerification.ts`, `loadMiniAppFromUrl.ts`, the
+whole of `sandbox/`, `storage.ts`, `storageScope.ts`, `storageMigration.ts`, `storageProvider.ts`
+(still four methods, still no `delete` and no `clear`), `trustConfig.ts`, and
+`packages/manifest/**`.
+
+### The host's demo profile is synthetic
+
+`DEMO_USER_PROFILE` in [App.tsx](../../apps/host/src/App.tsx) is a fixed constant —
+`{ id: 'demo-user', displayName: 'Demo User (synthetic, not a real account)' }`. **The demo host
+authenticates nobody.** There is no sign-in, no account and no session behind it. It exists so
+the gate can be seen working, and it names itself in its own display name so that nothing
+reaching a Mini App or a screenshot can be mistaken for a login. A real host would pass whatever
+its own session already knows; establishing that is outside this runtime.
+
+## Verification
+
+| Gate | Result |
+| --- | --- |
+| `pnpm lint` | pass |
+| `pnpm typecheck` | pass |
+| `pnpm build` | pass |
+| `pnpm test` | **1119 pass** (runtime 538, cli 184, shared 160, manifest 142, host 57, sdk 36, ui 2) |
+| `pnpm e2e` | **59 pass**, Chromium — 49 pre-existing **unmodified**, 10 new |
+| `pnpm format:check` | fails locally on the pre-existing CRLF artifact only — see below |
+
+Progression: 1072 → 1075 (W1) → 1082 (W2) → 1091 (W3) → 1101 (W4) → 1114 (W5) → 1119 (W6) →
+1119 (W7, which added browser specs only). Browser e2e 49 → 59 at W7.
+
+### Pre-existing tests modified, and why
+
+Three, each called out in its own commit message:
+
+- **`user.test.ts`** (W2) — import line only; the Phase 4 stub test is unchanged in body and
+  still passes.
+- **`user.test.ts`** (W3) — one block removed, `the withheld value`'s first case. It was W2's pin
+  asserting a verified package still receives nulls; it existed to be broken by W3 and was. Its
+  successor is the identity assertion in the indistinguishability block.
+- **`dispatcher.test.ts`** (W3) — one import line and a new describe block; no existing case
+  touched.
+
+### Fail-before / pass-after
+
+Every behavioural claim was checked by mutation, the production code reverted each time and the
+tree confirmed clean before committing.
+
+| Mutation | Effect |
+| --- | --- |
+| Gate on `provenance !== undefined` instead of `identity.verified` | 3 unit tests fail (W3), 4 more over the real chain (W4) |
+| No gate at all — the profile to everyone | 6 unit tests (W3), 3 browser specs (W7) |
+| Withheld value rebuilt instead of the shared constant | 1 (W3) |
+| Absent host profile returned as-is | 3 (W3) |
+| Entitlement derived from the `keyId` | 4 (W4) |
+| **`verifyPackage` never reports a verified identity** | **2 (W4), and 0 of W3's 13** |
+| **Host stops passing its profile to `createUserHandlers`** | **2 browser specs (W7), and 0 of 1119 unit tests** |
+| `init` template reverted to call `getProfile()` | 3 (W6) |
+| `describeUserIdentity` ignores the permission gate | 2 (W5) |
+
+The two bold rows measure gaps that would otherwise be invisible. W4 exists because W3's tests
+build provenance by hand and would all pass if the verifier stopped producing the shape the gate
+reads. W7 exists because jsdom never executes a sandbox's `srcdoc`, so no unit test can observe
+whether the host actually wires its profile through — a gap W5 recorded against itself and W7
+closed.
+
+### Browser evidence (W7)
+
+[`e2e/user-identity.spec.ts`](../../e2e/user-identity.spec.ts), ten cases, every one driven
+through the host's own "Load by URL" control against packages served from `public/miniapps/`
+with provenance the verifier produced. Never `?scenario=`, which supplies no provenance and would
+land in the embedded tier — where the answer is anonymous for a reason unrelated to the gate.
+
+| Property | Cases |
+| --- | --- |
+| Verified package is told | renders `demo-user` in its own DOM; host reports `shared`; fixture asserted verified |
+| Unverified package is not | renders `anonymous`, and negatively asserts neither field carries any part of the host profile; still loads and runs; host reports `withheld` and why |
+| The gates are independent | `PERMISSION_DENIED` reaches the frame as a rejection, identity elements still `pending`; pinned against the withheld case so the two cannot be collapsed |
+| Nothing persists | after a verified package has seen the identity, an unverified package in the same browser still learns nothing |
+
+### CI
+
+Pushed to `main` as `c443cfc..__W8_COMMIT__`.
+
+| | |
+| --- | --- |
+| Head SHA | `__W8_SHA__` |
+| Run | __CI_RUN_URL__ |
+| `build` job | __BUILD_RESULT__ |
+| `e2e` job | __E2E_RESULT__ |
+
+### The CRLF artifact, preserved
+
+`pnpm format:check` fails on this Windows checkout and did so before Phase 12 began. It is a
+working-tree artifact, not content: `core.autocrlf=true` checks files out with CRLF, Prettier
+reads them from the worktree and objects, while the committed blobs are LF and identical to what
+CI checks out on Linux. The two files it names —
+`apps/host/src/miniapp/fixtures/hello-styled/src/index.html` and
+`packages/runtime/src/bridge/handlers/storageScope.ts` — are not touched by this phase.
+
+The diagnostic, rather than reformatting: compare `git hash-object <file>` against
+`git rev-parse HEAD:<file>`. They matched throughout. `.gitattributes` remains the real fix and
+remains declined — a fourth phase running.
+
+## Limitations carried into Phase 13
+
+1. **No authentication of a person.** *Narrowed, not closed.* `user.getProfile()` relays a
+   profile the host already has. There is no sign-in, credential, token, session, account or
+   identity provider, and no protocol by which this runtime could establish identity rather than
+   relay it. Signing a package authenticates the publisher, never the user.
+2. **No persistence of user identity, and no per-user storage.** Deliberate, and the reason this
+   phase fit: persisting it would need deletion for sign-out, and `MiniAppStorageProvider` still
+   has no `delete` and no `clear`. No `v2:` scope exists.
+3. **No remote trust distribution or registry** — no CRL, no OCSP, no transparency log, no PKI
+   (carried from Phase 11, unchanged).
+4. **No expiry or timestamp semantics**, because without a trusted timestamp authority an expiry
+   would depend on the host's clock and could not establish signing time (carried from Phase 11,
+   unchanged).
+5. **No trust on first use** — fifth phase running.
+6. **Same-origin collisions for unregistered packages**, intentionally distinct from verified
+   identity. `storageIdCollision.test.ts` unmodified.
+7. **Signing-key custody is an unencrypted local file** at `0600` (carried from Phase 9).
+8. **Concurrent multi-tab migration** (carried from Phase 10).
+9. **Multi-view routing.** *Restored to the ledger here.* It was in the pre-Phase-11 README's
+   "Still to come" and the Phase 11 rewrite dropped it against that work item's own instruction
+   to narrow rather than delete; it survived only as a Phase 11 *non-goal*, a heading meaning
+   "not this phase" rather than "still outstanding". `navigation.close()` remains the whole of
+   the navigation surface: no routing, no views, no back/forward, and no manifest vocabulary for
+   more than one `entry`.
+10. **The `Object.prototype` own-property guard.** *Restored to the ledger here, with its
+    partial closure recorded accurately.* It was carried in the Phase 9 and Phase 10 records and
+    absent from Phase 11's, having been **partly** closed as a side effect that nobody wrote
+    down. Current evidence:
+    - **Closed** for the two config-derived producers: `trustStoreFromConfig`
+      (`packageVerification.ts:77`) and the trust-config parser (`trustConfig.ts:365`) both build
+      their maps with `Object.create(null)`.
+    - **Still open**, three bare indexed lookups over plain objects:
+      `trustStore?.[manifestId]` (`packageVerification.ts:192`), `this.digests?.[signedPath]`
+      (`fetchResourceProvider.ts:141`), and the signed-payload files map built as `{}`
+      (`integrity.ts:277`, written at `:303`).
+
+    Unreachable through `loadMiniAppFromUrl` for the first, since `ID_PATTERN` requires a dot —
+    but all three are reachable through the exported API. **Not fully resolved.**
+11. **No release or publishing workflow**, no `SECURITY.md`, no CI matrix.
+12. **`.gitattributes` / CRLF normalization** remains optional and unimplemented.
+
+## Found in discovery, deliberately out of scope and still open
+
+Carried forward from the plan above, re-verified at close-out and **not fixed by this phase**:
+
+- **A real defect in signed-payload parsing.** `__proto__` passes `validateFilePath` in
+  [integrity.ts](../../packages/shared/src/integrity.ts), and the files map is a plain `{}`, so
+  such an entry is **silently dropped** from a signature payload — confirmed by running it.
+  Fail-closed in effect, but security-critical parsing discarding a signed statement without
+  saying so. Deserves its own `fix(shared)` commit. This is item 10's third site.
+- **`SandboxOptions.provenance` is dead API.** `createSandbox.ts` contains zero references to it;
+  the copy that is read is `BridgeDispatcherOptions.provenance`. A host setting it reasonably
+  believes it has told the sandbox something, and its docstring still claims the field exists so
+  the verification work would not have to re-thread provenance — which it then did, elsewhere.
+- **The repository's only conditional test**, `build.test.ts`'s `it.runIf(unusedDriveLetter)`
+  case, runs only on Windows and has therefore never executed in CI. It guards the `--out`
+  containment whose regression once deleted `packages/` for real. A CI matrix is the fix; this is
+  a verification gap rather than tidiness.

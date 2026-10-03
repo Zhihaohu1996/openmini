@@ -1,4 +1,4 @@
-# Package integrity and identity — Phase 9 (+ Phase 11 trust lifecycle)
+# Package integrity and identity — Phase 9 (+ Phase 11 trust lifecycle, Phase 12 identity gating)
 
 Phase 9 answers two questions a host could not previously ask about a Mini App package:
 
@@ -357,8 +357,21 @@ Phase 11 narrowed the first of these rather than removing it. The rest stand unc
   but that is separation, not identity: it says two packages are different, never who either one
   is. There is no global package identity: an id means what a given host's configuration says it
   means, and nothing more.
-- **Real user or auth identity.** `user.getProfile()` remains a stub. Package identity is not
-  user identity, and Phase 11 delivers nothing toward the latter.
+- **Authentication of a person.** *Narrowed, not closed.* Phase 12 gave `user.getProfile()`
+  real behaviour — a host-supplied profile, relayed only to a verified package — so it is no
+  longer a stub. What does **not** exist is any way to establish who a person is: no sign-in, no
+  credential, no token, no session, no account, no identity provider, and no protocol by which
+  this runtime could determine identity rather than relay it. A host passes through what it
+  already knows, or passes nothing.
+
+  **Signing a package authenticates the publisher, never the user.** Those are different claims
+  about different parties, and the phases are stacked rather than merged: verification says which
+  publisher's key signed this code, and the Phase 12 gate uses that answer to decide whether the
+  code is trusted enough to be *told* something the host already knew. A valid signature says
+  nothing whatever about the person at the keyboard.
+
+  Nothing about a user is persisted, and nothing in `openmini.trust.json` describes a person —
+  it names signing keys. See [bridge.md](bridge.md#session-scoped-user-identity-phase-12).
 - **Encrypted signing-key custody.** The private key stays an unencrypted local file, written
   `0600`. Custody is the operator's; there is no agent, no HSM, and no keychain integration.
 
@@ -381,6 +394,18 @@ share a store. Pinned by
 This is deliberately a different thing from verified identity and remains so: the origin tier
 separates packages without identifying them, and registering an id — or serving from distinct
 origins — is what closes it.
+
+**Phase 12 added a second consumer of the same answer.** Verified provenance now decides two
+things rather than one: which storage namespace a package reaches (Phase 10) and whether it is
+told who is using the host (Phase 12). Both read `identity.verified` from the provenance this
+document's load-time policy produces, and neither re-derives it. That is the intended shape — the
+verification decision is made once, in one place, and consumed by the capabilities that depend on
+it. It is also why the verified/unverified distinction is load-bearing rather than advisory: two
+capability surfaces now turn on it.
+
+What Phase 12 did **not** change: no storage, no namespace derivation, no migration, no refusal
+code, and no load outcome. A revoked package never reaches the user handler for the same reason
+it reaches no storage scope — the load is refused and no provenance exists.
 
 **Phase 11 changed nothing here.** The namespace is still derived from the manifest identity,
 never from the `keyId`, which is exactly what lets a key rotate without moving an app's data. A

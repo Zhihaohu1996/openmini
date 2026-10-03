@@ -1,4 +1,4 @@
-# Mini App JS Bridge & Capability API — Phase 4 (+ Phase 5 persistent storage, Phase 7 network, Phase 10 storage scoping, Phase 11 trust lifecycle)
+# Mini App JS Bridge & Capability API — Phase 4 (+ Phase 5 persistent storage, Phase 7 network, Phase 10 storage scoping, Phase 11 trust lifecycle, Phase 12 session-scoped user identity)
 
 Phase 4 layers a small, deny-by-default RPC protocol on top of the Phase 3
 [sandbox boundary and handshake](sandbox.md), giving a Mini App a real (if
@@ -55,12 +55,15 @@ openmini.user.getProfile(): Promise<{ id: string | null; displayName: string | n
 openmini.network.fetch(url: string, init?: OpenMiniFetchInit): Promise<NetworkFetchResponse>
 ```
 
-`navigation.*` and `user.*` remain deliberate stubs, not real subsystems:
+`navigation.*` remains a deliberate stub: `navigation.close()` requests the
+host to close the Mini App (see the ack-confirmed ordering below), and there
+is no routing, no views and no back/forward.
 
-- `navigation.close()` requests the host to close the Mini App (see the
-  ack-confirmed ordering below).
-- `user.getProfile()` returns a static stub (`{ id: null, displayName: null
-  }`) — no real identity/auth system exists yet.
+`user.getProfile()` stopped being a stub in Phase 12 — see
+["Session-scoped user identity (Phase 12)"](#session-scoped-user-identity-phase-12)
+below. **It is not a login system**: the host supplies a profile it already
+has, the Mini App can only read it, nothing is persisted, and no Mini App can
+cause a person to be identified.
 
 `storage.*` was originally a non-persistent in-memory `Map` in Phase 4; Phase 5
 made it a real, durable, quota-enforced subsystem — see
@@ -529,6 +532,96 @@ server is almost never on port 80, so an explicit port **is** permitted for
 `localhost`, `127.0.0.1` and `[::1]`. Without the exemption the flag it sits
 behind would be useless.
 
+
+## Session-scoped user identity (Phase 12)
+
+`user.getProfile()` returns a profile **the host supplied**, and only to a
+package whose identity the host established. Implemented in
+[`handlers/user.ts`](../../packages/runtime/src/bridge/handlers/user.ts); the
+whole decision is one pure function, `resolveUserProfile`.
+
+**This is not authentication.** The runtime performs no sign-in, issues no
+credential, accepts no token, and has no identity provider. It does not
+establish who a person is and provides no way for anything to do so. A host
+that already knows who is using it may pass that through; a host that does
+not passes nothing, and every Mini App sees the same anonymous value. The
+capability is the *relay* and the *gate*, never the determination.
+
+### The two gates, and why they are independent
+
+| | |
+|---|---|
+| **Permission** | the manifest declares `user`. Enforced by the dispatcher, before any handler runs. Unchanged since Phase 4. |
+| **Provenance** | `identity.verified === true`. Enforced inside the handler. New in Phase 12. |
+
+Both must pass. They are not interchangeable and must not be collapsed:
+
+- **Verified, permission declared** → the host's profile.
+- **Verified, permission *not* declared** → `PERMISSION_DENIED`, a refusal.
+  Not an anonymous profile — being allowed to ask and being entitled to an
+  answer are different questions, and the package is entitled to know which
+  one it failed.
+- **Unverified, permission declared** → a *successful* call returning the
+  anonymous profile. Not a refusal.
+- **No provenance at all** (a static fixture, a test) → the anonymous
+  profile.
+- **Revoked signing key** → never reaches the handler. The load is refused
+  by `verifyPackage`, so no provenance exists and no bridge is built. This
+  is why revocation needs no identity rule of its own.
+
+### Why an unverified package is told nothing
+
+An unverified package shares the origin storage tier with every other
+unsigned package served from that origin — the neighbourhood this document
+already warns not to put anything disclosure-sensitive into. Handing it the
+user's identity would be disclosing to exactly that neighbourhood.
+
+The condition is `identity.verified`, deliberately **not**
+`provenance !== undefined`. Those differ precisely where it matters: a
+package loaded from a URL and found unsigned, or signed by an untrusted key,
+*has* provenance and is not verified. A presence check would admit the whole
+origin tier while still passing every fixture-shaped test, because a fixture
+has no provenance either way.
+
+### Every refusal looks the same to the Mini App
+
+`ANONYMOUS_USER_PROFILE` is one frozen constant in
+[`@openmini/shared`](../../packages/shared/src/bridge/user.ts), returned for
+every reason a profile is withheld: the package is unverified, no package
+was loaded, or the host has nobody to name. Those are indistinguishable by
+design. If they were not, a Mini App could probe the host — learn that
+someone is using it without being entitled to know who, or tell "you are not
+trusted" apart from "nobody is here". It is the same call the dispatcher
+makes when it answers `PERMISSION_DENIED` identically for an unpermitted
+namespace and one that does not exist.
+
+The **operator** does see the reason, in the host UI
+(`describeUserIdentity`). That asymmetry is the design: distinguishing the
+cases is a probe when the package does it and a diagnosis when the operator
+does.
+
+### Nothing is persisted
+
+The profile lives for the lifetime of the dispatcher and is written nowhere.
+`MiniAppStorageProvider` is untouched by this phase — still four methods,
+still no `delete` and no `clear` — and no `v2:` per-user storage scope
+exists.
+
+That is what keeps Phase 12 clear of Phase 10's no-delete invariant rather
+than merely respectful of it: **`sandbox.destroy()` is a complete sign-out**,
+because there is nothing to delete. Switching the profile is
+destroy-and-recreate. A verified package that has seen an identity leaves
+nothing behind for the next package to find, which is asserted in a real
+browser rather than argued.
+
+### The identity the host supplies is the host's business
+
+The demo host in this repository supplies a **fixed synthetic placeholder**
+(`demo-user`, labelled in its own display name as not a real account). It
+authenticates nobody and has no sign-in. The constant exists so the gate can
+be seen working. A real host would supply whatever its own session already
+knows — and whatever it does to establish that is outside this runtime
+entirely.
 ## Security boundaries — explicitly NOT provided by Phase 4
 
 - No direct subresource/network access via `fetch`, `XHR`, `WebSocket`,
@@ -547,11 +640,18 @@ behind would be useless.
   port handed off at handshake.
 - No Mini-App-driven RPC registration — the method registry is fixed by the
   host at bridge-creation time.
-- No real navigation/routing system, and **no real user/auth system** —
-  those two stub handlers remain exactly enough to prove the architecture
-  end-to-end and no more. Phase 11 delivered package-identity lifecycle, not
-  user identity; `user.getProfile()` is still a stub, and nothing in the
-  trust configuration describes a person. (`storage.*` is no longer a stub as of Phase 5 — see
+- No real navigation/routing system. `navigation.close()` is exactly enough
+  to prove the architecture end-to-end and no more; **multi-view routing
+  remains outstanding**, with no manifest vocabulary for more than one
+  `entry` and no view concept anywhere in the runtime.
+- **No authentication, and no login of any kind.** Phase 12 gave
+  `user.getProfile()` real behaviour, and that behaviour is to relay a
+  profile the host already had. There is no sign-in flow, no credential, no
+  token, no session cookie, no account, no identity provider and no protocol
+  by which a Mini App — or this runtime — could establish who a person is.
+  Nothing in the trust configuration describes a person either; it names
+  signing keys. See the Phase 12 section for the boundary in full.
+  (`storage.*` is no longer a stub as of Phase 5 — see
   ["Persistent storage.* (Phase 5)"](#persistent-storage-phase-5); `network.*`
   is real as of Phase 7.)
 - No redirect-following, and no way to tell a blocked redirect from any other

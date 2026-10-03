@@ -23,10 +23,11 @@ organization can run it without depending on a single vendor.
 
 ## Status
 
-**Phase 11: trust lifecycle.** The project now has a working end-to-end path
-from source to a verified, sandboxed Mini App whose data is scoped to the
-identity it proved — and whose signing key the host operator can retire and
-rotate without losing that data:
+**Phase 12: session-scoped user identity.** The project now has a working
+end-to-end path from source to a verified, sandboxed Mini App whose data is
+scoped to the identity it proved, whose signing key the host operator can
+retire and rotate without losing that data, and which is told who is using
+the host only once it has proved that identity:
 
 - **Phase 2** — the [`openmini.json` manifest format](docs/manifest.md),
   parsed and validated by `@openmini/manifest`.
@@ -54,8 +55,12 @@ rotate without losing that data:
   lifecycle, key rotation that keeps an app's storage, an
   `openmini trust validate` CLI command, and browser-level evidence for the
   whole lifecycle.
+- **Phase 12** — [session-scoped user identity](docs/security/bridge.md#session-scoped-user-identity-phase-12):
+  `user.getProfile()` stops being a stub and starts being gated. The host
+  supplies a profile it already has; a package receives it only if it both
+  declared the `user` permission and proved a verified identity.
 
-What Phase 11 does and does not claim, precisely:
+What Phases 11 and 12 claim, precisely:
 
 - **Revocation is supported.** A key marked `revoked` for an id refuses the
   load, with its own refusal code.
@@ -70,18 +75,43 @@ What Phase 11 does and does not claim, precisely:
 - **A missing or invalid trust configuration disables the URL-loaded Mini App
   path** and says why, rather than falling back to an empty trust store —
   which would register nothing, so nothing would fail closed.
+- **A verified package with the `user` permission** receives the
+  host-supplied profile.
+- **A verified package without the `user` permission** is refused with
+  `PERMISSION_DENIED` — the permission gate and the provenance gate are
+  independent, and a refusal is not an anonymous profile.
+- **An unverified package, or one with no provenance at all**, receives an
+  anonymous profile. Every reason for withholding is indistinguishable to
+  the Mini App.
+- **A revoked package never reaches the handler**, because the load is
+  refused and no provenance exists.
+- **No user identity is persisted**, and `sandbox.destroy()` ends its
+  lifetime completely.
+
+**`user.getProfile()` is host-supplied, session-scoped, provenance-gated
+capability data — not a login system.** There is no sign-in, no credential,
+no token, no account and no identity provider anywhere in this runtime, and
+Phase 12 adds none. The host passes through what it already knows, or passes
+nothing. **Nothing about a user is persisted:** the profile lives for the
+lifetime of the sandbox, so `sandbox.destroy()` is a complete sign-out
+because there is nothing to delete. The demo host here supplies a fixed
+synthetic placeholder and authenticates nobody.
 
 Still to come, and deliberately not provided: **no remote trust distribution
 or registry** of any kind (no CRL, no OCSP, no transparency log, no PKI) —
 the trust configuration is a local file each operator maintains; **no expiry
 or timestamp semantics**, because without a trusted timestamp authority an
 expiry would depend on the host's clock and could not establish when
-something was actually signed; **no trust on first use**; **no real
-user/auth identity** (`user.getProfile()` is still a stub); **local-file
-signing-key custody**, unencrypted at `0600`; and no release/publishing
-workflow. Two **unsigned** packages served from the **same origin** that
-claim one id still share storage — intentionally a different thing from
-verified identity. See
+something was actually signed; **no trust on first use**; **no
+authentication of a person** — Phase 12 relays an identity the host already
+has and never establishes one, so there is still no sign-in, credential,
+token, account or identity provider; **no per-user storage partition**;
+**no multi-view routing** — `navigation.close()` remains the whole of the
+navigation surface, with no manifest vocabulary for more than one `entry`;
+**local-file signing-key custody**, unencrypted at `0600`; and no
+release/publishing workflow. Two **unsigned** packages served from the
+**same origin** that claim one id still share storage — intentionally a
+different thing from verified identity. See
 [docs/security/integrity.md](docs/security/integrity.md) and
 [docs/security/bridge.md](docs/security/bridge.md) for the boundaries the
 current phases deliberately do **not** provide.

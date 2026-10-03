@@ -78,8 +78,12 @@ export interface VerifyPackageInput {
  * `openmini verify` already separates its two failures for the same reason —
  * see docs/cli.md.
  *
- * Phase 11 W2 introduces this over the refusals that already existed, with
- * every message left byte-for-byte unchanged. W3 adds the revoked-key case.
+ * Phase 11 W2 introduced this over the refusals that already existed, with
+ * every message left byte-for-byte unchanged. W3 adds `revoked-key` — the
+ * one refusal that exists *because* the code does. A revoked key and a key
+ * that was never registered are a sentence apart in prose and a different
+ * remedy apart in practice, and telling them apart must not require reading
+ * the sentence.
  */
 export type PackageRefusalCode =
   | 'unsigned-registered'
@@ -88,7 +92,8 @@ export type PackageRefusalCode =
   | 'version-mismatch'
   | 'manifest-not-covered'
   | 'manifest-digest-mismatch'
-  | 'untrusted-key';
+  | 'untrusted-key'
+  | 'revoked-key';
 
 export type PackageVerificationOutcome =
   | {
@@ -136,6 +141,13 @@ const MANIFEST_FILENAME = 'openmini.json';
  *    the host did not register, does not load at all. Reporting it as merely
  *    "unverified" and running it anyway would make registration decorative:
  *    an attacker would strip the signature to reach the weaker path.
+ *
+ *    A key the host registered and later **revoked** is refused here too,
+ *    and refused on its own terms rather than by being left out of the
+ *    trusted set — see the comment at the decision itself. Registration is
+ *    the presence of the id, so revoking every key for an id leaves it
+ *    registered and still failing closed. Revocation is not a route back to
+ *    step 5.
  *
  * 5. **An unregistered id may load unverified.** The host has expressed no
  *    opinion about who owns it, so there is nothing to fail closed against.
@@ -211,13 +223,36 @@ export async function verifyPackage(
   // keyId: a keyId is a label, and it costs an attacker nothing to claim
   // somebody else's.
   const signingKey = bytesToBase64(verified.publicKeySpki);
-  // Matched on key material only. `status` is carried through the type but
-  // deliberately not read here: W2 widens the representation and changes no
-  // outcome, and W3 is the single commit where a revoked key starts refusing.
-  // Splitting them that way keeps the behavioural change to one reviewable
-  // diff instead of hiding it inside a type migration.
-  const trusted =
-    registeredKeys?.some((entry) => normalizeTrustEntry(entry).publicKey === signingKey) ?? false;
+  // Matched on key material only, for revocation exactly as for trust. A
+  // revocation keyed off the label would let a signer dodge their own by
+  // renaming it, and let anyone revoke a publisher by copying theirs.
+  const matched = (registeredKeys ?? [])
+    .map(normalizeTrustEntry)
+    .filter((entry) => entry.publicKey === signingKey);
+
+  // Revocation wins over an active duplicate of the same key. The trust
+  // config validator rejects that contradiction before it can be written
+  // down, but `PackageTrustStore` is a plain value a host may assemble by
+  // hand, and the safe reading of a contradiction is the one that withholds
+  // trust: a revocation is something an operator did deliberately.
+  const isRevoked = matched.some((entry) => entry.status === 'revoked');
+  const trusted = matched.length > 0 && !isRevoked;
+
+  // Refused on its own terms, and deliberately not by dropping revoked
+  // entries from the trusted set and letting the branch below report it.
+  // That shortcut is the downgrade this phase exists to prevent:
+  // `untrusted-key` refuses a registered id today, but it is also the label
+  // an *unregistered* id carries while loading unverified into the shared
+  // origin storage tier. Routing a revoked key through it would leave the
+  // two one policy edit apart, and the operator with no way to tell a
+  // compromised key from an unknown one.
+  if (isRevoked) {
+    return {
+      ok: false,
+      code: 'revoked-key',
+      reason: `package "${manifestId}" is signed by a key the host has revoked for it (keyId ${verified.keyId})`,
+    };
+  }
 
   if (isRegistered && !trusted) {
     return {

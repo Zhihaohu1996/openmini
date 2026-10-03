@@ -357,20 +357,212 @@ describe('every refusal carries a code, and none of the messages moved', () => {
   });
 });
 
-describe('what W2 deliberately does not do yet', () => {
-  it('does not yet refuse a revoked key', async () => {
-    // Pinned rather than left implicit, the way Phase 9 pinned the storage
-    // id collision: W3 is the one commit where this flips, and breaking this
-    // test is how it announces itself.
-    //
-    // Nothing can reach this state in a running host today -- the trust
-    // config that produces a revoked entry is not wired to the load path
-    // until W6 -- so this is a property of the type migration, not a gap a
-    // deployed host has.
+const keyOf = (key: SigningKeyPair): string => bytesToBase64(key.publicKeySpki);
+const active = (key: SigningKeyPair): TrustedKeyEntry => ({
+  publicKey: keyOf(key),
+  status: 'active',
+});
+const revoked = (key: SigningKeyPair): TrustedKeyEntry => ({
+  publicKey: keyOf(key),
+  status: 'revoked',
+});
+
+describe('a revoked key refuses the load', () => {
+  it('refuses a package signed by a key revoked for that id', async () => {
+    const result = await run(await signature(publisher), { [APP_ID]: [revoked(publisher)] });
+
+    expect(result.ok).toBe(false);
+  });
+
+  it('carries its own code, distinct from untrusted-key and from unsigned', async () => {
+    // Three situations with three different operator remedies: re-sign with
+    // the current key, register this key, sign the package at all. The host
+    // has to tell them apart without reading the prose.
+    const revokedResult = await run(await signature(publisher), { [APP_ID]: [revoked(publisher)] });
+    const untrustedResult = await run(await signature(attacker), trustStoreFor(publisher));
+    const unsignedResult = await run(undefined, trustStoreFor(publisher));
+
+    expect(revokedResult).toMatchObject({ ok: false, code: 'revoked-key' });
+    expect(untrustedResult).toMatchObject({ ok: false, code: 'untrusted-key' });
+    expect(unsignedResult).toMatchObject({ ok: false, code: 'unsigned-registered' });
+  });
+
+  it('names the revoked key in the refusal an operator reads', async () => {
+    const result = await run(await signature(publisher), { [APP_ID]: [revoked(publisher)] });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain(publisher.keyId);
+    expect(result.reason).toContain('revoked');
+  });
+});
+
+describe('a revoked key is never downgraded to a cheaper path', () => {
+  it('produces no provenance, so no storage scope can be derived from it', async () => {
+    // The anti-downgrade property in its load-bearing form. A revoked key
+    // that demoted to `verified: false` would not merely mislabel the
+    // package -- it would move it from the verified namespace to the shared
+    // origin one, stranding its data and handing an attacker a path cheaper
+    // than a valid signature.
+    const result = await run(await signature(publisher), { [APP_ID]: [revoked(publisher)] });
+
+    expect(result.ok).toBe(false);
+    expect(result).not.toHaveProperty('provenance');
+    expect(result).not.toHaveProperty('digests');
+  });
+
+  it('does not report the revoked key as merely untrusted', async () => {
+    // The shape a naive implementation lands in: drop revoked entries from
+    // the trusted set and let the untrusted-key branch report it. That code
+    // is also what an unregistered id carries while loading unverified, so
+    // the refusal and the permissive path would differ only by where they
+    // were reached from.
+    const result = await run(await signature(publisher), { [APP_ID]: [revoked(publisher)] });
+
+    expect(result).not.toMatchObject({ code: 'untrusted-key' });
+    expect(result).not.toMatchObject({ provenance: { identity: { verified: false } } });
+  });
+
+  it('fails closed when the same key is listed both active and revoked', async () => {
+    // The trust config validator rejects a duplicated key, but this store is
+    // a plain value a host may assemble by hand. A contradiction is resolved
+    // against trust: revocation is a statement an operator made, and an
+    // active duplicate must not quietly undo it.
     const result = await run(await signature(publisher), {
-      [APP_ID]: [{ publicKey: bytesToBase64(publisher.publicKeySpki), status: 'revoked' }],
+      [APP_ID]: [active(publisher), revoked(publisher)],
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'revoked-key' });
+  });
+
+  it('revokes on key material, not on a keyId label', async () => {
+    // The mirror of the existing keyId test, on the new path: a revocation
+    // labelled with the publisher's keyId but carrying the attacker's key
+    // material revokes nothing the publisher signed. If the label decided
+    // this, an attacker could revoke a competitor by copying their label --
+    // and could dodge their own revocation by changing it.
+    const result = await run(await signature(publisher), {
+      [APP_ID]: [
+        active(publisher),
+        { publicKey: keyOf(attacker), status: 'revoked', keyId: publisher.keyId },
+      ],
     });
 
     expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.provenance.identity).toEqual({
+      verified: true,
+      id: APP_ID,
+      keyId: publisher.keyId,
+    });
+  });
+});
+
+describe('registration is presence of the id, not presence of an active key', () => {
+  it('still refuses an unsigned package when every key is revoked', async () => {
+    // Revoking everything must not be a route back to the unregistered,
+    // permissive path. Whoever can get a key revoked must not thereby gain
+    // the ability to serve the id unsigned.
+    const result = await run(undefined, { [APP_ID]: [revoked(publisher)] });
+
+    expect(result).toMatchObject({ ok: false, code: 'unsigned-registered' });
+  });
+
+  it('still refuses an unregistered key when every key is revoked', async () => {
+    const result = await run(await signature(attacker), { [APP_ID]: [revoked(publisher)] });
+
+    expect(result).toMatchObject({ ok: false, code: 'untrusted-key' });
+  });
+
+  it('scopes a revocation to the id it is written under', async () => {
+    // Revocation is per id. The same key may be compromised for one package
+    // and unaffected for another, and the store says so one id at a time.
+    const otherId = 'com.example.sibling';
+    const otherManifestBytes = new TextEncoder().encode(
+      JSON.stringify({
+        schemaVersion: 1,
+        id: otherId,
+        name: 'Sibling',
+        version: APP_VERSION,
+        entry: 'index.html',
+        permissions: [],
+      }),
+    );
+    const trustStore: PackageTrustStore = {
+      [APP_ID]: [revoked(publisher)],
+      [otherId]: [active(publisher)],
+    };
+
+    const refused = await run(await signature(publisher), trustStore);
+    expect(refused).toMatchObject({ ok: false, code: 'revoked-key' });
+
+    const allowed = await verifyPackage({
+      baseUrl: BASE_URL,
+      manifestId: otherId,
+      manifestVersion: APP_VERSION,
+      manifestBytes: otherManifestBytes,
+      signatureText: await signature(publisher, {
+        id: otherId,
+        files: {
+          'openmini.json': await sha256Base64(otherManifestBytes),
+          'index.html': ENTRY_DIGEST,
+        },
+      }),
+      trustStore,
+    });
+
+    expect(allowed.ok).toBe(true);
+    if (!allowed.ok) return;
+    expect(allowed.provenance.identity).toEqual({
+      verified: true,
+      id: otherId,
+      keyId: publisher.keyId,
+    });
+  });
+});
+
+describe('rotation: the new key signs, the old one is retired', () => {
+  it('verifies a package signed by the key that replaced a revoked one', async () => {
+    const successor = await generateSigningKeyPair();
+    const trustStore: PackageTrustStore = {
+      [APP_ID]: [revoked(publisher), active(successor)],
+    };
+
+    const result = await run(await signature(successor), trustStore);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.provenance.identity).toEqual({
+      verified: true,
+      id: APP_ID,
+      keyId: successor.keyId,
+    });
+  });
+
+  it('refuses the retired key with the revoked code, not the untrusted-key one', async () => {
+    // The distinction an operator acts on: the package was signed by a key
+    // this host used to trust, which is a re-signing problem, not an unknown
+    // publisher.
+    const successor = await generateSigningKeyPair();
+    const result = await run(await signature(publisher), {
+      [APP_ID]: [revoked(publisher), active(successor)],
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'revoked-key' });
+  });
+
+  it('keeps a legacy bare-string entry active alongside a revoked one', async () => {
+    // Invariant 1 held across the flip: a host part-way through rewriting
+    // its configuration still has a working trust decision.
+    const successor = await generateSigningKeyPair();
+    const trustStore: PackageTrustStore = {
+      [APP_ID]: [revoked(publisher), keyOf(successor)],
+    };
+
+    expect(await run(await signature(successor), trustStore)).toMatchObject({ ok: true });
+    expect(await run(await signature(publisher), trustStore)).toMatchObject({
+      ok: false,
+      code: 'revoked-key',
+    });
   });
 });

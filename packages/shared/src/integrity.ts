@@ -274,7 +274,24 @@ function parseIntegrityPayload(
     return { ok: false, reason: 'signed payload files must list at least one file' };
   }
 
-  const files: Record<string, string> = {};
+  // Null-prototype, because a plain `{}` loses entries here rather than
+  // merely mis-reading them. `JSON.parse` *does* give `__proto__` an own
+  // property, so `Object.entries` above yields it — but assigning to
+  // `files['__proto__']` on a plain object reaches the inherited setter,
+  // which ignores a string and writes nothing. The entry validates, passes
+  // every check below, and then vanishes.
+  //
+  // That is a signed statement being discarded in silence, and it is
+  // asymmetric with the producer: `serializeIntegrityPayload` builds its map
+  // with `Object.fromEntries`, which creates own properties, so signing
+  // includes the entry that verifying then drops.
+  //
+  // The map is also handed to `FetchResourceProvider` as its digest table,
+  // where a prototype key would answer an inherited value instead of
+  // `undefined` and so slip past the "not covered by the signature" refusal.
+  // Removing the prototype removes both problems at the source. Same call,
+  // and same reason, as `trustConfig.ts`'s packages map.
+  const files = Object.create(null) as Record<string, string>;
   for (const [path, digest] of entries) {
     // The signature file cannot be among the files it attests to: its own
     // bytes include the signature, so a digest of it could never be computed

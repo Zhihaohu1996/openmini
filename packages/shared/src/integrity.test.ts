@@ -314,6 +314,56 @@ describe('signed payload validation', () => {
     // the message says so.
     expect(await reasonFor(env)).toMatch(/signed payload is not valid JSON/);
   });
+
+  /**
+   * Payload text is built as raw JSON here, not with `JSON.stringify`, and
+   * that is load-bearing rather than stylistic. In an object literal a
+   * `__proto__:` key — quoted or not — is the prototype-setter form and
+   * never becomes an own property, so `JSON.stringify({ '__proto__': d })`
+   * emits `{}` and the case under test would never reach the parser.
+   * `trustConfig`'s and `packageVerification`'s prototype tests write raw
+   * JSON for the same reason.
+   */
+  it('keeps a payload entry named __proto__ rather than silently dropping it', async () => {
+    // `JSON.parse` *does* give `__proto__` an own property, so it reaches
+    // the loop and passes every check — and then assigning it onto a plain
+    // `{}` reaches the inherited setter, which ignores a string and writes
+    // nothing. The entry validated and vanished: a signed statement
+    // discarded in silence.
+    const env = await signRaw(
+      `{"payloadVersion":${INTEGRITY_PAYLOAD_VERSION},"id":"a","version":"1.0.0",` +
+        `"files":{"__proto__":"${DIGEST_A}","index.html":"${DIGEST_B}"}}`,
+    );
+
+    const result = await verifySignatureEnvelope(env);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(Object.hasOwn(result.payload.files, '__proto__')).toBe(true);
+    expect(result.payload.files['__proto__']).toBe(DIGEST_A);
+    expect(result.payload.files['index.html']).toBe(DIGEST_B);
+  });
+
+  it('answers undefined for a prototype key the payload never listed', async () => {
+    // The other half, and the one the digest table depends on: this map is
+    // handed to `FetchResourceProvider`, which treats `undefined` as "not
+    // covered by the signature" and refuses before fetching. A plain object
+    // would answer `constructor` with an inherited function and slip past
+    // that refusal entirely.
+    const env = await signRaw(
+      `{"payloadVersion":${INTEGRITY_PAYLOAD_VERSION},"id":"a","version":"1.0.0",` +
+        `"files":{"index.html":"${DIGEST_A}"}}`,
+    );
+
+    const result = await verifySignatureEnvelope(env);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    for (const key of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+      expect(result.payload.files[key]).toBeUndefined();
+    }
+    expect(Object.getPrototypeOf(result.payload.files)).toBeNull();
+  });
 });
 
 describe('serializeIntegrityPayload', () => {

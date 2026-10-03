@@ -25,8 +25,30 @@ import { SELF_NAVIGATE_MANIFEST_JSON } from './miniapp/fixtures/self-navigate/ma
 import { describeRefusal, MiniAppHost } from './miniapp/MiniAppHost';
 import { loadTrustConfig, readTrustConfigSource } from './miniapp/trustConfig';
 import type { TrustConfigState } from './miniapp/trustConfig';
+import type { UserProfile } from '@openmini/shared';
 
 const INVALID_MANIFEST_JSON = '{ this is not valid json';
+
+/**
+ * Fixed, synthetic placeholder data. **This host authenticates nobody.**
+ *
+ * There is no sign-in, no account, no session, no credential and no
+ * identity provider anywhere in this application, and Phase 12 adds none.
+ * This constant exists so the demo has something to hand a verified Mini
+ * App, and so the gate that decides whether to hand it over can be seen
+ * working. A real host would supply whatever its own session already knows.
+ *
+ * The value is deliberately self-describing: anything that reaches a Mini
+ * App or a screenshot should say what it is, so nobody mistakes the demo
+ * for a login.
+ *
+ * Its lifetime is the sandbox. Nothing is written, so there is nothing to
+ * sign out of and nothing to delete.
+ */
+const DEMO_USER_PROFILE: UserProfile = {
+  id: 'demo-user',
+  displayName: 'Demo User (synthetic, not a real account)',
+};
 
 /**
  * `?scenario=` drives which fixture the demo loads. Only used by the
@@ -221,6 +243,7 @@ function RemoteMiniAppLoader({ trustConfig }: { trustConfig: TrustConfigState })
             manifestJson={state.manifestJson}
             resourceProvider={state.provider}
             provenance={state.provenance}
+            userProfile={DEMO_USER_PROFILE}
           />
         </div>
       )}

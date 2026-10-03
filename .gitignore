@@ -41,6 +41,9 @@ apps/host/public/miniapps/storage-signed/
 apps/host/public/miniapps/storage-unsigned/
 apps/host/public/miniapps/revoked-key/
 apps/host/public/miniapps/storage-rotated/
+apps/host/public/miniapps/user-signed/
+apps/host/public/miniapps/user-unsigned/
+apps/host/public/miniapps/user-unpermitted/
 apps/host/src/miniapp/fixtures/generated/
 # The host's trust configuration, served beside the app and read at startup.
 # Generated for the same reason the fixtures are: it names ephemeral keys

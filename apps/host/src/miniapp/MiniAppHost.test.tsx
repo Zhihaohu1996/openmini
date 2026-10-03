@@ -1,7 +1,13 @@
-import type { MiniAppResourceProvider } from '@openmini/runtime';
+import type { MiniAppResourceProvider, PackageProvenance } from '@openmini/runtime';
+import type { UserProfile } from '@openmini/shared';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { describeRefusal, describeStorageScope, MiniAppHost } from './MiniAppHost';
+import {
+  describeRefusal,
+  describeStorageScope,
+  describeUserIdentity,
+  MiniAppHost,
+} from './MiniAppHost';
 
 afterEach(cleanup);
 
@@ -16,6 +22,15 @@ const validManifestJson = JSON.stringify({
   version: '0.1.0',
   entry: 'index.html',
   permissions: [],
+});
+
+const userManifestJson = JSON.stringify({
+  schemaVersion: 1,
+  id: 'com.openmini.test',
+  name: 'Test App',
+  version: '0.1.0',
+  entry: 'index.html',
+  permissions: ['user'],
 });
 
 const okProvider: MiniAppResourceProvider = {
@@ -271,5 +286,157 @@ describe('MiniAppHost refusal display', () => {
 
     expect(text).toContain('never registered');
     expect(text).not.toContain('undo the revocation');
+  });
+});
+
+/**
+ * Phase 12 W5. The host hands a verified package its demo profile, and
+ * reports to the operator what it handed over or withheld.
+ *
+ * The Mini App sees one indistinguishable anonymous value for every reason
+ * it was refused an identity. The operator sees the reason. That asymmetry
+ * is deliberate -- distinguishing them is a probe when the package does it
+ * and a diagnosis when the operator does -- so it is asserted here rather
+ * than left to be inferred.
+ */
+describe('describeUserIdentity', () => {
+  const DEMO: UserProfile = { id: 'demo-user', displayName: 'Demo User (synthetic)' };
+
+  const verified: PackageProvenance = {
+    baseUrl: 'https://cdn.example.com/apps/notes/',
+    identity: { verified: true, id: 'com.example.notes', keyId: 'KEY-A' },
+  };
+  const unsigned: PackageProvenance = {
+    baseUrl: 'https://cdn.example.com/apps/notes/',
+    identity: { verified: false, reason: 'unsigned' },
+  };
+  const untrusted: PackageProvenance = {
+    baseUrl: 'https://cdn.example.com/apps/notes/',
+    identity: { verified: false, reason: 'untrusted-key' },
+  };
+
+  it('reports the profile as shared when both gates pass', () => {
+    const result = describeUserIdentity({
+      provenance: verified,
+      permissions: ['user'],
+      userProfile: DEMO,
+    });
+
+    expect(result.disclosure).toBe('shared');
+    expect(result.text).toContain('demo-user');
+  });
+
+  it('reports a package that never asked, separately from one that was refused', () => {
+    // The two most confusable states for an operator: nothing happened
+    // because the app did not ask, versus nothing happened because the host
+    // declined. They have different fixes.
+    const notRequested = describeUserIdentity({
+      provenance: verified,
+      permissions: ['storage'],
+      userProfile: DEMO,
+    });
+    const withheld = describeUserIdentity({
+      provenance: unsigned,
+      permissions: ['user'],
+      userProfile: DEMO,
+    });
+
+    expect(notRequested.disclosure).toBe('not-requested');
+    expect(withheld.disclosure).toBe('withheld');
+    expect(notRequested.text).not.toBe(withheld.text);
+  });
+
+  it('reports withheld for every unverified reason', () => {
+    for (const provenance of [unsigned, untrusted]) {
+      expect(
+        describeUserIdentity({ provenance, permissions: ['user'], userProfile: DEMO }).disclosure,
+      ).toBe('withheld');
+    }
+  });
+
+  it('distinguishes "nobody configured" from "withheld"', () => {
+    // Both end in the Mini App receiving an anonymous profile, and an
+    // operator debugging that needs to know which one happened.
+    const result = describeUserIdentity({ provenance: verified, permissions: ['user'] });
+
+    expect(result.disclosure).toBe('none-configured');
+    expect(result.text).toContain('no demo profile');
+  });
+
+  it('checks the permission before the provenance, as the handler path does', () => {
+    // An unverified package that also never asked is reported as not having
+    // asked, because that is the first gate it failed and the first thing
+    // to fix. The order here mirrors the dispatcher, which refuses on
+    // permission before any handler runs.
+    const result = describeUserIdentity({
+      provenance: unsigned,
+      permissions: [],
+      userProfile: DEMO,
+    });
+
+    expect(result.disclosure).toBe('not-requested');
+  });
+
+  it('never claims the host authenticated anyone', () => {
+    // Wording guard. This host signs nobody in, and the phrase an operator
+    // reads must not suggest otherwise.
+    const texts = [
+      describeUserIdentity({ provenance: verified, permissions: ['user'], userProfile: DEMO }).text,
+      describeUserIdentity({ provenance: unsigned, permissions: ['user'], userProfile: DEMO }).text,
+      describeUserIdentity({ provenance: verified, permissions: ['user'] }).text,
+      describeUserIdentity({ provenance: verified, permissions: [], userProfile: DEMO }).text,
+    ];
+
+    for (const text of texts) {
+      expect(text).not.toMatch(/logged in|signed in|authenticat|login|account holder/i);
+    }
+  });
+});
+
+describe('MiniAppHost user identity display', () => {
+  const verified: PackageProvenance = {
+    baseUrl: 'https://cdn.example.com/apps/notes/',
+    identity: { verified: true, id: 'com.openmini.test', keyId: 'KEY-A' },
+  };
+
+  it('shows nothing at all when no package was loaded', () => {
+    // Same rule the provenance line follows: a fixture was never subject to
+    // a check, so the host makes no claim about it either way.
+    render(<MiniAppHost manifestJson={validManifestJson} resourceProvider={okProvider} />);
+
+    expect(screen.queryByTestId('miniapp-user-identity')).toBeNull();
+  });
+
+  it('reports the disclosure for a loaded package', () => {
+    render(
+      <MiniAppHost
+        manifestJson={userManifestJson}
+        resourceProvider={okProvider}
+        provenance={verified}
+        userProfile={{ id: 'demo-user', displayName: 'Demo User (synthetic)' }}
+      />,
+    );
+
+    const line = screen.getByTestId('miniapp-user-identity');
+    expect(line.getAttribute('data-disclosure')).toBe('shared');
+    expect(line.textContent).toContain('demo-user');
+  });
+
+  it('reports withholding from an unverified package', () => {
+    render(
+      <MiniAppHost
+        manifestJson={userManifestJson}
+        resourceProvider={okProvider}
+        provenance={{
+          baseUrl: verified.baseUrl,
+          identity: { verified: false, reason: 'unsigned' },
+        }}
+        userProfile={{ id: 'demo-user', displayName: 'Demo User (synthetic)' }}
+      />,
+    );
+
+    expect(screen.getByTestId('miniapp-user-identity').getAttribute('data-disclosure')).toBe(
+      'withheld',
+    );
   });
 });

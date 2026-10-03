@@ -17,6 +17,7 @@ import type {
   StorageScopeResolution,
 } from '@openmini/runtime';
 import { TRUST_CONFIG_FILENAME } from '@openmini/shared';
+import type { UserProfile } from '@openmini/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 export interface MiniAppHostProps {
@@ -37,6 +38,17 @@ export interface MiniAppHostProps {
    * `StorageHandlerOptions.adoptLegacyScopeForIds`.
    */
   adoptLegacyStorageForIds?: ReadonlySet<string>;
+  /**
+   * The person using the host, as the host understands them.
+   *
+   * Supplied by the caller and owned by it; this component neither obtains
+   * nor stores one. Its lifetime is the sandbox — nothing is written
+   * anywhere, so destroying the sandbox is a complete sign-out.
+   *
+   * A Mini App only receives it if it both declared the `user` permission
+   * and proved a verified identity. See `describeUserIdentity`.
+   */
+  userProfile?: UserProfile;
 }
 
 /**
@@ -117,6 +129,65 @@ function describeProvenance(provenance: PackageProvenance): string {
 }
 
 /**
+ * Whether this Mini App was told who is using the host, and if not, why.
+ *
+ * The counterpart to `describeStorageScope`, and it exists for the same
+ * reason: a decision nobody can observe is indistinguishable from a bug.
+ * An operator watching a package receive an anonymous profile should be
+ * able to tell "it never asked" from "it asked and is not verified" from
+ * "there is nobody to name" — three situations with three different
+ * explanations, which the Mini App itself deliberately cannot tell apart.
+ *
+ * That asymmetry is the point, not an oversight. The *package* gets one
+ * indistinguishable value, because distinguishing them would let it probe
+ * the host. The *operator* gets the reason, because it is their host.
+ *
+ * Mirrors the gate in `resolveUserProfile` rather than reimplementing the
+ * decision: if these two ever disagree, the UI is lying, so the order of
+ * the checks here is the order there.
+ */
+export type UserIdentityDisclosure = 'shared' | 'withheld' | 'not-requested' | 'none-configured';
+
+export function describeUserIdentity(input: {
+  provenance: PackageProvenance;
+  /**
+   * The manifest's declared permissions, and nothing else of the
+   * manifest. Narrowed to what the decision actually reads, so this stays
+   * checkable against `resolveUserProfile` by eye and the host does not
+   * take a dependency on @openmini/manifest to render one line.
+   */
+  permissions: readonly string[];
+  userProfile?: UserProfile;
+}): { disclosure: UserIdentityDisclosure; text: string } {
+  const { provenance, permissions, userProfile } = input;
+
+  if (!permissions.includes('user')) {
+    return {
+      disclosure: 'not-requested',
+      text: 'user identity: not requested — this Mini App does not declare the "user" permission, so the bridge refuses the call before any handler runs',
+    };
+  }
+
+  if (!provenance.identity.verified) {
+    return {
+      disclosure: 'withheld',
+      text: 'user identity: withheld — this package is not verified, so it receives an anonymous profile. Identity is shared only with a package whose own identity this host established.',
+    };
+  }
+
+  if (userProfile === undefined) {
+    return {
+      disclosure: 'none-configured',
+      text: 'user identity: this host has no demo profile configured, so the package receives an anonymous profile',
+    };
+  }
+
+  return {
+    disclosure: 'shared',
+    text: `user identity: shared with this verified package (${userProfile.id ?? 'anonymous'})`,
+  };
+}
+/**
  * How a *refused* load is described to the operator.
  *
  * The counterpart to `describeProvenance`, and it exists for the same
@@ -163,6 +234,7 @@ export function MiniAppHost({
   resourceProvider,
   provenance,
   adoptLegacyStorageForIds,
+  userProfile,
 }: MiniAppHostProps) {
   const gateResult = useMemo(() => gateManifest(manifestJson), [manifestJson]);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -209,7 +281,7 @@ export function MiniAppHost({
               onScopeResolved: setStorageScope,
             }),
             navigation: createNavigationHandlers(),
-            user: createUserHandlers(),
+            user: createUserHandlers({ profile: userProfile }),
             // Plain http to loopback is a dev/test affordance only, so it is
             // tied to the dev build rather than to hostname shape; a
             // production bundle gets https-only.
@@ -236,6 +308,20 @@ export function MiniAppHost({
       {provenance && (
         <p data-testid="miniapp-provenance" data-verified={String(provenance.identity.verified)}>
           {describeProvenance(provenance)}
+        </p>
+      )}
+      {provenance && (
+        <p
+          data-testid="miniapp-user-identity"
+          data-disclosure={
+            describeUserIdentity({ provenance, permissions: manifest.permissions, userProfile })
+              .disclosure
+          }
+        >
+          {
+            describeUserIdentity({ provenance, permissions: manifest.permissions, userProfile })
+              .text
+          }
         </p>
       )}
       {storageScope && (

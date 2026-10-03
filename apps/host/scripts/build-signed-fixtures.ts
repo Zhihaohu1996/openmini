@@ -100,6 +100,18 @@ const STORAGE_UNSIGNED_ID = 'com.openmini.storage-unsigned';
  * IndexedDB. Its id registers the original key as `revoked` and a
  * successor as `active`, and the package is signed by the successor.
  */
+/**
+ * Phase 12's identity fixtures, and the only pair that can show the gate.
+ * Same Mini App source, same `user` permission; one id is registered and
+ * signed by a registered key and the other is neither, so the only
+ * difference between them is the identity the host establishes.
+ */
+const USER_SIGNED_ID = 'com.openmini.user-signed';
+/** Deliberately unregistered, so it stays in the origin tier. */
+const USER_UNSIGNED_ID = 'com.openmini.user-unsigned';
+/** Registered and signed, but never declares the `user` permission. */
+const USER_UNPERMITTED_ID = 'com.openmini.user-unpermitted';
+
 const REVOKED_ID = 'com.openmini.revoked-key';
 const ROTATED_ID = 'com.openmini.storage-rotated';
 
@@ -128,14 +140,14 @@ function manifestFor(id: string, name: string, permissions: string[] = []): stri
  * run, and the failure would look like a Phase 10 bug rather than a fixture
  * bug.
  */
-async function buildStorageProbeDocument(label: string): Promise<string> {
+async function buildProbeDocument(probe: ProbeKind, label: string): Promise<string> {
   const entry = join(
     scriptDir,
     '..',
     'src',
     'miniapp',
     'fixtures',
-    'storage-probe',
+    probe,
     'miniapp-src',
     'main.ts',
   );
@@ -151,7 +163,7 @@ async function buildStorageProbeDocument(label: string): Promise<string> {
   });
   const script = bundled.outputFiles[0]?.text;
   if (script === undefined) {
-    throw new Error('esbuild produced no output for the storage-probe fixture');
+    throw new Error(`esbuild produced no output for the ${probe} fixture`);
   }
 
   // `#probe-id` lets a spec confirm *which* package it is looking at, which
@@ -162,6 +174,8 @@ async function buildStorageProbeDocument(label: string): Promise<string> {
 <body>
 <h1 id="probe-id">${label}</h1>
 <p id="probe-ready">pending</p>
+<p id="probe-user-id">pending</p>
+<p id="probe-user-name">pending</p>
 <script></script>
 </body>
 </html>
@@ -181,6 +195,8 @@ function documentFor(label: string): string {
 `;
 }
 
+type ProbeKind = 'storage-probe' | 'user-probe';
+
 interface FixtureSpec {
   dir: string;
   id: string;
@@ -188,8 +204,22 @@ interface FixtureSpec {
   sign?: 'trusted' | 'untrusted' | 'revoked' | 'successor';
   /** Rewrite the entry document *after* signing, leaving a valid signature over stale bytes. */
   tamperAfterSigning?: boolean;
-  /** Build the real SDK-backed probe instead of the inert integrity fixture. */
-  storageProbe?: boolean;
+  /** Build a real SDK-backed probe instead of the inert integrity fixture. */
+  probe?: ProbeKind;
+  /** Manifest permissions. Defaults to the probe's own, or none. */
+  permissions?: string[];
+}
+
+/**
+ * A probe declares the capability it probes, unless the fixture overrides
+ * it -- which `user-unpermitted` does, to be verified and unpermitted at
+ * the same time.
+ */
+function permissionsFor(fixture: FixtureSpec): string[] {
+  if (fixture.permissions !== undefined) return fixture.permissions;
+  if (fixture.probe === 'storage-probe') return ['storage'];
+  if (fixture.probe === 'user-probe') return ['user'];
+  return [];
 }
 
 const FIXTURES: readonly FixtureSpec[] = [
@@ -197,10 +227,21 @@ const FIXTURES: readonly FixtureSpec[] = [
   { dir: 'signed-untrusted', id: SIGNED_UNTRUSTED_ID, sign: 'untrusted' },
   { dir: 'tampered', id: TAMPERED_ID, sign: 'trusted', tamperAfterSigning: true },
   { dir: 'unsigned-trusted', id: UNSIGNED_TRUSTED_ID },
-  { dir: 'storage-signed', id: STORAGE_SIGNED_ID, sign: 'trusted', storageProbe: true },
-  { dir: 'storage-unsigned', id: STORAGE_UNSIGNED_ID, storageProbe: true },
+  { dir: 'storage-signed', id: STORAGE_SIGNED_ID, sign: 'trusted', probe: 'storage-probe' },
+  { dir: 'storage-unsigned', id: STORAGE_UNSIGNED_ID, probe: 'storage-probe' },
   { dir: 'revoked-key', id: REVOKED_ID, sign: 'revoked' },
-  { dir: 'storage-rotated', id: ROTATED_ID, sign: 'successor', storageProbe: true },
+  { dir: 'storage-rotated', id: ROTATED_ID, sign: 'successor', probe: 'storage-probe' },
+  { dir: 'user-signed', id: USER_SIGNED_ID, sign: 'trusted', probe: 'user-probe' },
+  { dir: 'user-unsigned', id: USER_UNSIGNED_ID, probe: 'user-probe' },
+  // Verified, and silent about `user`. The dispatcher must refuse it even
+  // though its identity is established -- the two gates are independent.
+  {
+    dir: 'user-unpermitted',
+    id: USER_UNPERMITTED_ID,
+    sign: 'trusted',
+    probe: 'user-probe',
+    permissions: [],
+  },
 ];
 
 async function main(): Promise<void> {
@@ -218,11 +259,9 @@ async function main(): Promise<void> {
     rmSync(servedDir, { recursive: true, force: true });
     mkdirSync(servedDir, { recursive: true });
 
-    const manifest = fixture.storageProbe
-      ? manifestFor(fixture.id, fixture.dir, ['storage'])
-      : manifestFor(fixture.id, fixture.dir);
-    const document = fixture.storageProbe
-      ? await buildStorageProbeDocument(fixture.dir)
+    const manifest = manifestFor(fixture.id, fixture.dir, permissionsFor(fixture));
+    const document = fixture.probe
+      ? await buildProbeDocument(fixture.probe, fixture.dir)
       : documentFor(fixture.dir);
     writeFileSync(join(servedDir, 'openmini.json'), manifest, 'utf8');
     writeFileSync(join(servedDir, 'index.html'), document, 'utf8');
@@ -281,6 +320,8 @@ async function main(): Promise<void> {
       // Registered, and nothing may sign it. Still registered: an unsigned
       // package claiming this id must still fail closed, which is what stops
       // revoking every key from being a way back to the permissive path.
+      [USER_SIGNED_ID]: { keys: [activeKey(trusted, 'fixture-build')] },
+      [USER_UNPERMITTED_ID]: { keys: [activeKey(trusted, 'fixture-build')] },
       [REVOKED_ID]: {
         keys: [
           {
@@ -336,6 +377,9 @@ async function main(): Promise<void> {
 
 export const STORAGE_PROBE_SIGNED_ID = '${STORAGE_SIGNED_ID}';
 export const STORAGE_PROBE_UNSIGNED_ID = '${STORAGE_UNSIGNED_ID}';
+export const USER_PROBE_SIGNED_ID = '${USER_SIGNED_ID}';
+export const USER_PROBE_UNSIGNED_ID = '${USER_UNSIGNED_ID}';
+export const USER_PROBE_UNPERMITTED_ID = '${USER_UNPERMITTED_ID}';
 export const REVOKED_KEY_ID = '${REVOKED_ID}';
 export const STORAGE_ROTATED_ID = '${ROTATED_ID}';
 

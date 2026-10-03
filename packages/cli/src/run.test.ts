@@ -179,3 +179,75 @@ describe('build command', () => {
     expect(errors.join('\n')).toContain('--out must be a directory inside the project');
   });
 });
+
+describe('trust command', () => {
+  const KEY =
+    'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEu5el220Y9BqnQsr/xLSeWOU0w/pZcdAqU+b+xcSG/pq/HlLuMho6QEur8bUoU2HuLrOLutm9GFq8hdDAYwwwUg==';
+
+  async function withConfig(body: unknown): Promise<string> {
+    const dir = await tempDir('openmini-run-trust-');
+    await writeFile(
+      join(dir, 'openmini.trust.json'),
+      typeof body === 'string' ? body : JSON.stringify(body),
+      'utf8',
+    );
+    return dir;
+  }
+
+  it('exits 0 and reports the registered ids for a valid config', async () => {
+    const dir = await withConfig({
+      trustConfigVersion: 1,
+      packages: { 'com.example.notes': { keys: [{ publicKey: KEY, status: 'active' }] } },
+    });
+
+    expect(await run(['trust', 'validate', dir])).toBe(0);
+    expect(logs.join('\n')).toContain('com.example.notes');
+  });
+
+  it('exits 1 and reports issues on stderr for an invalid config', async () => {
+    const dir = await withConfig({ trustConfigVersion: 9, packages: {} });
+
+    expect(await run(['trust', 'validate', dir])).toBe(1);
+    expect(errors.join('\n')).toContain('Invalid openmini.trust.json');
+  });
+
+  it('exits 1 when there is no config to read', async () => {
+    expect(await run(['trust', 'validate', await tempDir('openmini-run-trust-')])).toBe(1);
+    expect(errors.join('\n')).toContain('cannot read trust configuration');
+  });
+
+  it('exits 1 when no subcommand is given', async () => {
+    expect(await run(['trust'])).toBe(1);
+    expect(errors.join('\n')).toContain('trust requires a subcommand');
+  });
+
+  it('exits 1 for an unknown subcommand rather than validating nothing', async () => {
+    // A typo'd `trust validte` that exited 0 would be read as a passing
+    // check of a file it never opened.
+    expect(await run(['trust', 'validte'])).toBe(1);
+    expect(errors.join('\n')).toContain('unknown trust subcommand');
+  });
+
+  it('prints usage for trust --help and exits 0', async () => {
+    expect(await run(['trust', '--help'])).toBe(0);
+    expect(logs.join('\n')).toContain('openmini trust validate');
+  });
+
+  it('rejects an unknown flag', async () => {
+    expect(await run(['trust', 'validate', '--strict'])).toBe(1);
+    expect(errors.join('\n')).toContain('unknown flag');
+  });
+
+  it('defaults to the working directory when no path is given', async () => {
+    // Exercised through the failure, because `run` resolves "." against the
+    // test process's cwd and the repository root has no trust config. The
+    // point is that the default is "." rather than undefined.
+    expect(await run(['trust', 'validate'])).toBe(1);
+    expect(errors.join('\n')).toContain('openmini.trust.json');
+  });
+
+  it('is listed in the top-level usage', async () => {
+    expect(await run(['--help'])).toBe(0);
+    expect(logs.join('\n')).toContain('openmini trust validate');
+  });
+});

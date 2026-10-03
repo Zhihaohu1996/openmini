@@ -6,6 +6,8 @@ export { startDevServer, DEFAULT_DEV_HOST, DEFAULT_DEV_PORT } from './commands/d
 export type { DevServer, DevServerOptions } from './commands/dev.js';
 export { initProject } from './commands/init.js';
 export type { InitOptions, InitResult } from './commands/init.js';
+export { validateTrustConfigFile } from './commands/trust.js';
+export type { TrustValidateResult } from './commands/trust.js';
 export { validatePackage } from './commands/validate.js';
 export type { ValidateResult } from './commands/validate.js';
 export { assembleEntryDocument, PackageBuildError } from './packageBuild.js';

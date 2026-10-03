@@ -3,6 +3,7 @@ import { startDevServer } from './commands/dev.js';
 import { InitError, initProject } from './commands/init.js';
 import { generateKeyFile, KeygenError } from './commands/keygen.js';
 import { SignError, signPackage } from './commands/sign.js';
+import { validateTrustConfigFile } from './commands/trust.js';
 import { validatePackage } from './commands/validate.js';
 import { verifyPackage } from './commands/verify.js';
 import { PackageBuildError } from './packageBuild.js';
@@ -18,6 +19,7 @@ Usage:
   openmini keygen --out <keyfile> [--force]
   openmini sign [dir] --key <keyfile>
   openmini verify [dir]
+  openmini trust validate [dir|openmini.trust.json]
 
 Run "openmini <command> --help" for command-specific usage.
 
@@ -129,7 +131,33 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   This does NOT decide whether the signing key is trusted. It prints the
   key so you can compare it against a host's trust store.`,
   },
+  trust: {
+    valueFlags: [],
+    booleanFlags: [],
+    usage: `openmini trust validate [dir|openmini.trust.json]
+
+  Validates a host's trust configuration — which keys may sign which
+  package ids, and which of those keys are still valid. Defaults to ".".
+  Exits 0 if valid, 1 otherwise.
+
+  Runs the same parser and prints the same issue text the host runs, so a
+  config this accepts is one the host accepts.
+
+  This checks the shape of the file, NOT whether the keys in it are the
+  right ones. "openmini verify" prints a package's signing key; comparing
+  it against what you have listed here is yours to do.`,
+  },
 };
+
+/**
+ * `trust` is the only command with a subcommand, so the dispatch for it is
+ * one level deeper rather than the flag-driven shape every other command
+ * uses. It is spelled that way because the trust configuration is going to
+ * grow more verbs than `validate` — the deferred work in
+ * docs/plans/phase-11.md is mostly trust-config lifecycle — and a flat
+ * `openmini trust-validate` would have to be renamed on the first of them.
+ */
+const TRUST_SUBCOMMANDS = ['validate'] as const;
 
 const SHORT_ALIASES: Record<string, string> = { h: 'help' };
 
@@ -368,6 +396,29 @@ export async function run(argv: string[]): Promise<number> {
 
     case 'verify': {
       const result = await verifyPackage(positionals[0] ?? 'dist');
+      if (result.ok) {
+        console.log(result.report);
+        return 0;
+      }
+      console.error(result.report);
+      return 1;
+    }
+
+    case 'trust': {
+      const subcommand = positionals[0];
+      if (subcommand === undefined) {
+        console.error(`trust requires a subcommand\n\n${spec.usage}`);
+        return 1;
+      }
+      // An unknown subcommand is an error for the same reason an unknown
+      // flag is: a typo'd `openmini trust validte` that silently validated
+      // nothing and exited 0 would be read as a passing check.
+      if (!(TRUST_SUBCOMMANDS as readonly string[]).includes(subcommand)) {
+        console.error(`unknown trust subcommand: ${subcommand}\n\n${spec.usage}`);
+        return 1;
+      }
+
+      const result = await validateTrustConfigFile(positionals[1] ?? '.');
       if (result.ok) {
         console.log(result.report);
         return 0;

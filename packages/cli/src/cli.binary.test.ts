@@ -237,4 +237,107 @@ describe('the built binary', () => {
       expect(second.stderr).toContain('already exists');
     });
   });
+
+  /**
+   * `trust validate` reads a file a host operator hand-edits, and its exit
+   * code is what a deployment pipeline gates on. The in-process tests cover
+   * the reporting; these cover the part only a spawned binary can show —
+   * that the shared validator survives bundling, and that a rejected config
+   * reaches the shell as a non-zero status rather than a message.
+   */
+  describe('trust validate', () => {
+    const KEY =
+      'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEu5el220Y9BqnQsr/xLSeWOU0w/pZcdAqU+b+xcSG/pq/HlLuMho6QEur8bUoU2HuLrOLutm9GFq8hdDAYwwwUg==';
+
+    async function withTrustConfig(body: unknown): Promise<string> {
+      const dir = await mkdtemp(join(tmpdir(), 'openmini-bin-trust-'));
+      await writeFile(
+        join(dir, 'openmini.trust.json'),
+        typeof body === 'string' ? body : JSON.stringify(body, null, 2),
+        'utf8',
+      );
+      return dir;
+    }
+
+    it('exits 0 for a valid configuration', async () => {
+      const dir = await withTrustConfig({
+        trustConfigVersion: 1,
+        packages: {
+          'com.example.notes': {
+            keys: [
+              { publicKey: KEY, status: 'active', keyId: 'laptop-2026' },
+              { publicKey: KEY.replace('u5el', 'v6fm'), status: 'revoked' },
+            ],
+          },
+        },
+      });
+
+      const result = runCli(['trust', 'validate', dir]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('com.example.notes: 1 active key, 1 revoked');
+    });
+
+    it('exits 1 and reports on stderr for an invalid configuration', async () => {
+      const dir = await withTrustConfig({
+        trustConfigVersion: 1,
+        packages: { 'com.example.notes': { keys: [{ publicKey: KEY, status: 'expired' }] } },
+      });
+
+      const result = runCli(['trust', 'validate', dir]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('Invalid openmini.trust.json');
+      expect(result.stdout).toBe('');
+    });
+
+    it('exits 1 for an unsupported version rather than reading it anyway', async () => {
+      const dir = await withTrustConfig({ trustConfigVersion: 2, packages: {} });
+
+      const result = runCli(['trust', 'validate', dir]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('unsupported trustConfigVersion');
+    });
+
+    it('exits 1 when there is no configuration to read', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'openmini-bin-trust-'));
+
+      const result = runCli(['trust', 'validate', dir]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('cannot read trust configuration');
+    });
+
+    it('exits 1 for an unknown subcommand', () => {
+      const result = runCli(['trust', 'validte']);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('unknown trust subcommand');
+    });
+
+    it('exits 0 for a help request', () => {
+      const result = runCli(['trust', '--help']);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('openmini trust validate');
+    });
+
+    it('accepts a key straight out of keygen, as the keygen output says it will', async () => {
+      // `openmini keygen` tells the operator its publicKey is "what a host
+      // puts in its trust store". That is a promise across two commands and
+      // two encodings, so it is checked end to end through the binary rather
+      // than assumed: keygen's base64 goes into a config and `trust
+      // validate` must accept it unedited.
+      const keyFile = join(await mkdtemp(join(tmpdir(), 'openmini-bin-key-')), 'k.json');
+      const keygen = runCli(['keygen', '--out', keyFile]);
+      expect(keygen.status).toBe(0);
+
+      const publicKey = /^\s*publicKey\s+(\S+)\s*$/m.exec(keygen.stdout)?.[1];
+      expect(publicKey).toBeDefined();
+
+      const dir = await withTrustConfig({
+        trustConfigVersion: 1,
+        packages: { 'com.example.binary': { keys: [{ publicKey, status: 'active' }] } },
+      });
+
+      const result = runCli(['trust', 'validate', dir]);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('com.example.binary: 1 active key');
+    });
+  });
 });

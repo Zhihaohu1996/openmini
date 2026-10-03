@@ -134,11 +134,35 @@ export class FetchResourceProvider implements MiniAppResourceProvider {
       throw new Error(`resource path resolved outside the package base: ${relativePath}`);
     }
 
+    // Own properties only. A bare index lookup also reaches everything on
+    // `Object.prototype`, so a resource named `constructor` or `toString`
+    // would answer an inherited value, `expectedDigest` would not be
+    // `undefined`, and the refusal below would not fire: the fetch goes out
+    // for a file the signature never mentioned. The digest compare then fails
+    // on bytes that should never have been requested, reporting "does not
+    // match its signed digest" when the truth is "is not covered by the
+    // package signature".
+    //
+    // This is the dispatcher's gate, minus half of it. There the registry
+    // holds callables, so `hasOwn` alone would admit an own non-function and
+    // `typeof` alone would admit an inherited one, and both checks are
+    // required. Here the values are digest strings, so there is no callable
+    // to distinguish and `hasOwn` is the whole of it.
+    //
+    // Phase 13 W1 gave the signed-payload map a null prototype, which closes
+    // this for every digest table the verifier builds. The gate stays because
+    // this constructor is exported: `createFetchResourceProvider` takes its
+    // digests from the caller, and a provider's refusal should not rest on a
+    // promise made in another package.
+    const expectedDigest =
+      this.digests !== undefined && Object.hasOwn(this.digests, signedPath)
+        ? this.digests[signedPath]
+        : undefined;
+
     // A file the signature says nothing about is refused, not fetched. This
     // is the difference between "the files it mentions are intact" and "the
     // package is what was signed": without it, an attacker adds a file
     // rather than altering one, and every digest still matches.
-    const expectedDigest = this.digests?.[signedPath];
     if (this.digests !== undefined && expectedDigest === undefined) {
       throw new Error(`resource is not covered by the package signature: ${relativePath}`);
     }

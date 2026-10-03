@@ -269,4 +269,91 @@ describe('digest enforcement', () => {
     global.fetch = mockFetchOk(BODY) as unknown as typeof fetch;
     await expect(createFetchResourceProvider(BASE).readText('index.html')).resolves.toBe(BODY);
   });
+
+  // Phase 13 W2. `resolveContainedPath` accepts `constructor` and `__proto__`
+  // as ordinary segment names — it has no name rule, deliberately — so these
+  // paths reach the digest lookup like any other. The house style here is
+  // `trustConfig.test.ts`'s "the packages map cannot reach Object.prototype"
+  // and `dispatcher.test.ts`'s inherited-member block.
+  describe('the digest table cannot reach Object.prototype', () => {
+    /**
+     * A digest map with an own `__proto__` entry, built the way the verifier
+     * builds it: `Object.create(null)`, then assignment.
+     *
+     * This helper exists because the fixture cannot be written as a literal.
+     * In an object literal a `__proto__:` key — quoted or not — is the
+     * prototype-setter form and never becomes an own property, so
+     * `{ '__proto__': digest }` is an *empty* map and `JSON.stringify` of it
+     * emits `{}`. A test written that way would assert against a fixture that
+     * does not contain the case under test. Assigning onto a null-prototype
+     * object has no inherited setter to reach, so the own property is created.
+     * `integrity.test.ts` writes raw JSON for the same reason.
+     */
+    function digestMapWithProtoEntry(digest: string): Record<string, string> {
+      const map = Object.create(null) as Record<string, string>;
+      map['__proto__'] = digest;
+      return map;
+    }
+
+    it.each(['constructor', 'toString', 'hasOwnProperty', 'valueOf', '__proto__'])(
+      'refuses %j, which the signature does not cover, without fetching it',
+      async (name) => {
+        // A plain object is what an external caller hands in —
+        // `createFetchResourceProvider` is exported and takes its digests from
+        // the caller. A bare index lookup answers every one of these names
+        // with an inherited value, so `expectedDigest` is not `undefined`, the
+        // refusal below it does not fire, and the fetch goes out for a file
+        // the signature never mentioned.
+        const fetchMock = streamingOk(BODY);
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const provider = createFetchResourceProvider(BASE, { 'index.html': await digestOf(BODY) });
+
+        // The rejection is captured rather than asserted inline so that the
+        // two claims below fail independently. Without the gate the request is
+        // already on the wire *and* the error misreports the reason, and an
+        // inline `rejects.toThrow` would report only the second — leaving the
+        // guarantee that actually matters untested. The guarantee is "refused
+        // *before* it is fetched", not "eventually rejected"; the spy is what
+        // says so, and `stallingResponse`'s test captures the same way.
+        const error = await provider.readText(name).catch((reason: unknown) => reason);
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toMatch(
+          /resource is not covered by the package signature/,
+        );
+      },
+    );
+
+    it('serves a file the payload genuinely lists under a prototype name', async () => {
+      // The complement, and the reason this is a lookup gate rather than a
+      // name blocklist: `__proto__` is a legal POSIX filename and a legal
+      // manifest entry, so a signed package may honestly list one. Rejecting
+      // the name would make such a package unloadable; `Object.hasOwn` asks
+      // the only question that matters — did the payload say this?
+      global.fetch = streamingOk(BODY) as unknown as typeof fetch;
+      const provider = createFetchResourceProvider(
+        BASE,
+        digestMapWithProtoEntry(await digestOf(BODY)),
+      );
+
+      await expect(provider.readText('__proto__')).resolves.toBe(BODY);
+    });
+
+    it('still verifies the digest of a file listed under a prototype name', async () => {
+      // `hasOwn` decides whether the entry exists; the value it then reads
+      // must be the recorded digest and nothing else. Were the gate passing
+      // through something merely truthy, this would resolve instead of
+      // rejecting.
+      global.fetch = streamingOk('<!doctype html>evil') as unknown as typeof fetch;
+      const provider = createFetchResourceProvider(
+        BASE,
+        digestMapWithProtoEntry(await digestOf(BODY)),
+      );
+
+      await expect(provider.readText('__proto__')).rejects.toThrow(
+        /does not match its signed digest/,
+      );
+    });
+  });
 });

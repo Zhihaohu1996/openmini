@@ -1,3 +1,12 @@
+import {
+  bytesToBase64,
+  generateSigningKeyPair,
+  INTEGRITY_PAYLOAD_VERSION,
+  serializeSignatureEnvelope,
+  sha256Base64,
+  signIntegrityPayload,
+} from '@openmini/shared';
+import type { SigningKeyPair } from '@openmini/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { oversizedStreamingResponse, stallingResponse } from '../http/fakeResponses';
 import { PACKAGE_FETCH_TIMEOUT_MS } from './fetchResourceProvider';
@@ -245,5 +254,127 @@ describe('loadMiniAppFromUrl', () => {
       if (result.ok) return;
       expect(result.reason).toContain('timed out');
     });
+  });
+});
+
+/**
+ * Phase 11 W6. The host has to tell a revoked key from an untrusted one,
+ * and the only thing crossing this boundary before now was prose.
+ *
+ * Narrow on purpose: `code` is present when a package was fetched and then
+ * refused, and absent when it could not be fetched or parsed at all. The
+ * failures above verification are not verification outcomes, and giving
+ * them codes would be a general error-model redesign with no caller asking
+ * for it.
+ */
+describe('refusal codes reach the caller', () => {
+  const originalFetch = global.fetch;
+  const REGISTERED_ID = 'com.openmini.hello-remote';
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  /** Answers the manifest, and whatever signature text the test supplies. */
+  function mockFetchSigned(manifest: string, signatureText?: string) {
+    return vi.fn().mockImplementation((url: URL | string) => {
+      if (url.toString().endsWith('openmini.sig.json')) {
+        return Promise.resolve(
+          signatureText === undefined ? fakeResponse('', 404) : fakeResponse(signatureText),
+        );
+      }
+      return Promise.resolve(fakeResponse(manifest));
+    });
+  }
+
+  async function signatureFor(key: SigningKeyPair, manifest: string): Promise<string> {
+    const envelope = await signIntegrityPayload(
+      {
+        payloadVersion: INTEGRITY_PAYLOAD_VERSION,
+        id: REGISTERED_ID,
+        version: '0.1.0',
+        files: {
+          'openmini.json': await sha256Base64(new TextEncoder().encode(manifest)),
+          'index.html': 'sha256-ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0=',
+        },
+      },
+      key.privateKey,
+      key.publicKeySpki,
+    );
+    return serializeSignatureEnvelope(envelope);
+  }
+
+  it('reports a revoked key as revoked-key, not as untrusted-key', async () => {
+    // The whole reason this field exists. Both refusals say "signed by a
+    // key you cannot use"; only the code says which, and the remedies are
+    // opposites.
+    const key = await generateSigningKeyPair();
+    global.fetch = mockFetchSigned(
+      MANIFEST_JSON,
+      await signatureFor(key, MANIFEST_JSON),
+    ) as unknown as typeof fetch;
+
+    const result = await loadMiniAppFromUrl('http://localhost:5173/miniapps/x', {
+      trustStore: {
+        [REGISTERED_ID]: [{ publicKey: bytesToBase64(key.publicKeySpki), status: 'revoked' }],
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('revoked-key');
+  });
+
+  it('reports an unregistered key as untrusted-key', async () => {
+    const publisher = await generateSigningKeyPair();
+    const attacker = await generateSigningKeyPair();
+    global.fetch = mockFetchSigned(
+      MANIFEST_JSON,
+      await signatureFor(attacker, MANIFEST_JSON),
+    ) as unknown as typeof fetch;
+
+    const result = await loadMiniAppFromUrl('http://localhost:5173/miniapps/x', {
+      trustStore: { [REGISTERED_ID]: [bytesToBase64(publisher.publicKeySpki)] },
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'untrusted-key' });
+  });
+
+  it('reports an unsigned registered id as unsigned-registered', async () => {
+    global.fetch = mockFetchOk(MANIFEST_JSON) as unknown as typeof fetch;
+
+    const result = await loadMiniAppFromUrl('http://localhost:5173/miniapps/x', {
+      trustStore: { [REGISTERED_ID]: ['irrelevant-key-material'] },
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'unsigned-registered' });
+  });
+
+  it('leaves the reason prose exactly as the verifier wrote it', async () => {
+    // The code is additive. An operator still reads the sentence, and this
+    // layer must not paraphrase it on the way past.
+    global.fetch = mockFetchOk(MANIFEST_JSON) as unknown as typeof fetch;
+
+    const result = await loadMiniAppFromUrl('http://localhost:5173/miniapps/x', {
+      trustStore: { [REGISTERED_ID]: [] },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe(
+      `package "${REGISTERED_ID}" is registered as requiring a trusted signature, but is unsigned`,
+    );
+  });
+
+  it('carries no code for failures that are not verification outcomes', async () => {
+    // A 404 is not a refusal, and inventing a code for it would start the
+    // error-model redesign this phase declined to do.
+    global.fetch = vi.fn().mockResolvedValue(fakeResponse('', 404)) as unknown as typeof fetch;
+
+    const result = await loadMiniAppFromUrl('http://localhost:5173/miniapps/missing');
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBeUndefined();
   });
 });

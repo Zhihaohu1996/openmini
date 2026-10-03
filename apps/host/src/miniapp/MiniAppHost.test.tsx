@@ -1,7 +1,7 @@
 import type { MiniAppResourceProvider } from '@openmini/runtime';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { describeStorageScope, MiniAppHost } from './MiniAppHost';
+import { describeRefusal, describeStorageScope, MiniAppHost } from './MiniAppHost';
 
 afterEach(cleanup);
 
@@ -202,5 +202,74 @@ describe('MiniAppHost storage scope display', () => {
         expect(described).toMatch(pattern);
       }
     }
+  });
+});
+
+/**
+ * Phase 11 W6. A refused load never becomes provenance, so the refusal is
+ * the only thing the operator sees — and the three trust-store refusals
+ * have three different remedies.
+ */
+describe('MiniAppHost refusal display', () => {
+  it('distinguishes a revoked key from an untrusted one', () => {
+    // The distinction this phase exists to make visible. Both are "signed
+    // by a key you cannot use", and the remedies are opposites: register
+    // the untrusted one if it belongs to the publisher, and do *not*
+    // re-register the revoked one, because retiring it was deliberate.
+    const revoked = describeRefusal({ code: 'revoked-key', reason: 'refused' });
+    const untrusted = describeRefusal({ code: 'untrusted-key', reason: 'refused' });
+
+    expect(revoked).not.toBe(untrusted);
+    expect(revoked).toContain('revoked');
+    expect(revoked).toContain('Re-signing');
+    expect(untrusted).toContain('never registered');
+  });
+
+  it('tells an operator not to undo a revocation by re-trusting the key', () => {
+    const text = describeRefusal({ code: 'revoked-key', reason: 'refused' });
+
+    expect(text).toContain('undo the revocation');
+  });
+
+  it('explains that an unsigned registered id is refused rather than downgraded', () => {
+    const text = describeRefusal({ code: 'unsigned-registered', reason: 'refused' });
+
+    expect(text).toContain('refused rather than loaded unverified');
+  });
+
+  it('keeps the runtime reason, and adds to it rather than replacing it', () => {
+    // The prose the runtime produced names the id and the keyId. Losing it
+    // would cost the operator the only concrete detail in the message.
+    for (const code of ['revoked-key', 'untrusted-key', 'unsigned-registered'] as const) {
+      expect(describeRefusal({ code, reason: 'the runtime said this' })).toContain(
+        'the runtime said this',
+      );
+    }
+  });
+
+  it('falls through to the reason for refusals with no remedy to add', () => {
+    // Deliberately not an exhaustive switch with a message per code. A
+    // tampered package or a bad digest is already fully described by the
+    // runtime, and restating it here would be a second wording to keep in
+    // step with the first.
+    expect(describeRefusal({ code: 'manifest-digest-mismatch', reason: 'bytes moved' })).toBe(
+      'bytes moved',
+    );
+    expect(describeRefusal({ reason: 'manifest fetch failed (404)' })).toBe(
+      'manifest fetch failed (404)',
+    );
+  });
+
+  it('selects on the code, never on the wording of the reason', () => {
+    // If this matched on prose, a reason mentioning "revoked" would pick up
+    // the revoked remedy even when the code says otherwise -- and improving
+    // a sentence would silently change which advice an operator reads.
+    const text = describeRefusal({
+      code: 'untrusted-key',
+      reason: 'this sentence mentions a revoked key but is not one',
+    });
+
+    expect(text).toContain('never registered');
+    expect(text).not.toContain('undo the revocation');
   });
 });

@@ -1,5 +1,5 @@
 import { bytesToBase64, digestsEqual, sha256Base64, verifySignatureFile } from '@openmini/shared';
-import type { TrustedKeyEntry } from '@openmini/shared';
+import type { TrustConfig, TrustedKeyEntry } from '@openmini/shared';
 import type { PackageProvenance } from './types';
 
 /**
@@ -54,6 +54,37 @@ export type PackageTrustEntry = string | TrustedKeyEntry;
  */
 export function normalizeTrustEntry(entry: PackageTrustEntry): TrustedKeyEntry {
   return typeof entry === 'string' ? { publicKey: entry, status: 'active' } : entry;
+}
+
+/**
+ * The trust store a validated `openmini.trust.json` describes.
+ *
+ * A mapping and nothing more: the validation already happened, in
+ * `@openmini/shared`'s `validateTrustConfig`, and this deliberately cannot
+ * be reached with anything else — its parameter is `TrustConfig`, which
+ * only a successful validation produces. There is no overload taking raw
+ * JSON, because a second door into the trust store is a second place for
+ * the rules to differ.
+ *
+ * Note what has no counterpart here: there is no `emptyTrustStore()` and no
+ * fallback for a configuration that failed to load. A host that reached for
+ * one would register no ids, so nothing would fail closed, and an impostor
+ * of a registered id would load as merely unverified — fail-open wearing
+ * the word "empty". A host whose configuration is missing or invalid must
+ * refuse the load path instead. See docs/plans/phase-11.md.
+ */
+export function trustStoreFromConfig(config: TrustConfig): PackageTrustStore {
+  const store: Record<string, readonly PackageTrustEntry[]> = Object.create(null) as Record<
+    string,
+    readonly PackageTrustEntry[]
+  >;
+  for (const [id, entry] of Object.entries(config.packages)) {
+    // Carried across whole, revoked keys included. Dropping them here would
+    // turn a revoked key back into an unregistered one at the last moment,
+    // which is the refusal W3 exists to keep distinguishable.
+    store[id] = entry.keys;
+  }
+  return store;
 }
 
 export interface VerifyPackageInput {

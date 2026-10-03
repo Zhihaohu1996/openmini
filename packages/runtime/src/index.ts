@@ -23,7 +23,11 @@ export {
 } from './sandbox/fetchResourceProvider';
 export { loadMiniAppFromUrl } from './sandbox/loadMiniAppFromUrl';
 export type { LoadMiniAppOptions } from './sandbox/loadMiniAppFromUrl';
-export { normalizeTrustEntry, verifyPackage } from './sandbox/packageVerification';
+export {
+  normalizeTrustEntry,
+  trustStoreFromConfig,
+  verifyPackage,
+} from './sandbox/packageVerification';
 export type {
   PackageRefusalCode,
   PackageTrustEntry,

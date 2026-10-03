@@ -3,12 +3,13 @@ import {
   generateSigningKeyPair,
   INTEGRITY_PAYLOAD_VERSION,
   serializeSignatureEnvelope,
+  parseTrustConfig,
   sha256Base64,
   signIntegrityPayload,
 } from '@openmini/shared';
 import type { SigningKeyPair, TrustedKeyEntry } from '@openmini/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { normalizeTrustEntry, verifyPackage } from './packageVerification';
+import { normalizeTrustEntry, trustStoreFromConfig, verifyPackage } from './packageVerification';
 import type { PackageTrustStore } from './packageVerification';
 
 const BASE_URL = 'https://cdn.example.com/apps/demo/';
@@ -564,5 +565,128 @@ describe('rotation: the new key signs, the old one is retired', () => {
       ok: false,
       code: 'revoked-key',
     });
+  });
+});
+
+/**
+ * Phase 11 W6. The step between a validated `openmini.trust.json` and the
+ * store the verifier consults.
+ *
+ * Driven through `parseTrustConfig` rather than through a hand-built
+ * `TrustConfig` literal: the claim is about what a host gets when it reads
+ * a real file, and a literal would skip the parser that produces the only
+ * values this function can legally receive.
+ */
+describe('trustStoreFromConfig', () => {
+  const configText = (packages: unknown): string =>
+    JSON.stringify({ trustConfigVersion: 1, packages });
+
+  function storeFrom(packages: unknown): PackageTrustStore {
+    const parsed = parseTrustConfig(configText(packages));
+    if (!parsed.valid) {
+      throw new Error(`fixture config did not validate: ${JSON.stringify(parsed.issues)}`);
+    }
+    return trustStoreFromConfig(parsed.config);
+  }
+
+  it('registers each id with the keys the file lists', async () => {
+    const store = storeFrom({
+      [APP_ID]: { keys: [{ publicKey: bytesToBase64(publisher.publicKeySpki), status: 'active' }] },
+    });
+
+    const result = await run(await signature(publisher), store);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.provenance.identity).toEqual({
+      verified: true,
+      id: APP_ID,
+      keyId: publisher.keyId,
+    });
+  });
+
+  it('carries a revoked key through, so the refusal survives the mapping', async () => {
+    // Dropping revoked entries here would be the quietest possible
+    // downgrade: the id would still be registered, but the key would look
+    // merely unknown, and the operator would be told to register a key they
+    // deliberately retired.
+    const store = storeFrom({
+      [APP_ID]: {
+        keys: [{ publicKey: bytesToBase64(publisher.publicKeySpki), status: 'revoked' }],
+      },
+    });
+
+    expect(await run(await signature(publisher), store)).toMatchObject({
+      ok: false,
+      code: 'revoked-key',
+    });
+  });
+
+  it('keeps an all-revoked id registered, so it still fails closed', async () => {
+    const store = storeFrom({
+      [APP_ID]: {
+        keys: [{ publicKey: bytesToBase64(publisher.publicKeySpki), status: 'revoked' }],
+      },
+    });
+
+    expect(await run(undefined, store)).toMatchObject({
+      ok: false,
+      code: 'unsigned-registered',
+    });
+  });
+
+  it('keeps an id with no keys at all registered', async () => {
+    expect(await run(undefined, storeFrom({ [APP_ID]: { keys: [] } }))).toMatchObject({
+      ok: false,
+      code: 'unsigned-registered',
+    });
+  });
+
+  it('registers nothing for an id the file does not mention', async () => {
+    const store = storeFrom({ 'com.example.elsewhere': { keys: [] } });
+
+    // Unregistered, so it loads unverified -- unchanged from Phase 9, and
+    // the thing an empty store would wrongly do for *every* id.
+    const result = await run(await signature(publisher), store);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.provenance.identity).toEqual({ verified: false, reason: 'untrusted-key' });
+  });
+
+  it('rotates: the successor verifies while the retired key is refused', async () => {
+    const successor = await generateSigningKeyPair();
+    const store = storeFrom({
+      [APP_ID]: {
+        keys: [
+          { publicKey: bytesToBase64(publisher.publicKeySpki), status: 'revoked' },
+          { publicKey: bytesToBase64(successor.publicKeySpki), status: 'active' },
+        ],
+      },
+    });
+
+    expect(await run(await signature(successor), store)).toMatchObject({ ok: true });
+    expect(await run(await signature(publisher), store)).toMatchObject({
+      ok: false,
+      code: 'revoked-key',
+    });
+  });
+
+  it('cannot be reached with an id inherited from Object.prototype', async () => {
+    // The config's packages map has a null prototype, and the store built
+    // from it must not reintroduce the inherited-member lookup that guards
+    // against. `__proto__` is the one that would otherwise not even be an
+    // own property.
+    // Written as raw JSON on purpose: in an object literal `__proto__:`
+    // sets the prototype instead of creating a key, so the hazard would
+    // never reach the parser at all.
+    const parsed = parseTrustConfig(
+      '{"trustConfigVersion":1,"packages":{"__proto__":{"keys":[]},"constructor":{"keys":[]}}}',
+    );
+    expect(parsed.valid).toBe(true);
+    if (!parsed.valid) return;
+    const store = trustStoreFromConfig(parsed.config);
+
+    expect(Object.getPrototypeOf(store)).toBeNull();
+    expect(Object.keys(store).sort()).toEqual(['__proto__', 'constructor']);
   });
 });

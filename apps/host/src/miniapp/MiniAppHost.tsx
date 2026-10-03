@@ -12,9 +12,11 @@ import type {
   MiniAppResourceProvider,
   MiniAppSandbox,
   PackageProvenance,
+  PackageRefusalCode,
   SandboxState,
   StorageScopeResolution,
 } from '@openmini/runtime';
+import { TRUST_CONFIG_FILENAME } from '@openmini/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 export interface MiniAppHostProps {
@@ -112,6 +114,42 @@ function describeProvenance(provenance: PackageProvenance): string {
   return provenance.identity.reason === 'unsigned'
     ? 'unsigned: no signature, so nothing vouches for this package'
     : 'untrusted key: signed, but not by a key this host trusts';
+}
+
+/**
+ * How a *refused* load is described to the operator.
+ *
+ * The counterpart to `describeProvenance`, and it exists for the same
+ * reason: a package that was refused never becomes provenance, so the
+ * refusal is the only thing the operator ever sees about it, and the three
+ * trust-store refusals have three different remedies.
+ *
+ * **A revoked key is the one this phase added, and it is not a variant of
+ * "untrusted".** An untrusted key is one this host has never heard of, and
+ * the remedy is to decide whether to register it. A revoked key is one this
+ * host registered and then deliberately retired, and the remedy is for the
+ * publisher to re-sign with its current key — adding the revoked key back
+ * would be undoing a decision somebody made on purpose. Rendering them with
+ * one message would hide exactly that.
+ *
+ * Selected on `code`, never on `reason`. The prose is what an operator
+ * reads; matching on it would make the wording load-bearing and would break
+ * silently the first time somebody improved a sentence. Codes without a
+ * message of their own fall through to the reason the runtime produced,
+ * which is already accurate — this adds remedies, it does not restate
+ * refusals.
+ */
+export function describeRefusal(refusal: { reason: string; code?: PackageRefusalCode }): string {
+  switch (refusal.code) {
+    case 'revoked-key':
+      return `${refusal.reason}\nThis key was registered and then revoked. Re-signing the package with the publisher's current key is the fix; re-trusting this one would undo the revocation.`;
+    case 'untrusted-key':
+      return `${refusal.reason}\nThis host has never registered that key. Add it to ${TRUST_CONFIG_FILENAME} only if you know it belongs to the publisher of this id.`;
+    case 'unsigned-registered':
+      return `${refusal.reason}\nA registered id must be signed. An unsigned package claiming one is refused rather than loaded unverified, so that stripping a signature is not a way past the check.`;
+    default:
+      return refusal.reason;
+  }
 }
 
 /**

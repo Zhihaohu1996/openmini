@@ -2,7 +2,7 @@ import { formatManifestIssues, parseManifest } from '@openmini/manifest';
 import { SIGNATURE_FILENAME } from '@openmini/shared';
 import { BoundedFetchError, fetchBounded } from '../http/boundedFetch';
 import { verifyPackage } from './packageVerification';
-import type { PackageTrustStore } from './packageVerification';
+import type { PackageRefusalCode, PackageTrustStore } from './packageVerification';
 import {
   createFetchResourceProvider,
   normalizePackageBaseUrl,
@@ -25,7 +25,24 @@ export type LoadMiniAppResult =
        */
       provenance: PackageProvenance;
     }
-  | { ok: false; reason: string };
+  | {
+      ok: false;
+      reason: string;
+      /**
+       * Present when the package was fetched and then *refused*, absent when
+       * it could not be fetched or parsed at all.
+       *
+       * That optionality is the whole shape of this field, and it is
+       * deliberate. The failures above this point — a 404, a timeout, an
+       * unparseable manifest — are not verification outcomes and inventing
+       * codes for them would be a general error-model redesign this phase
+       * has no reason to do. What a host actually needs is narrower: to tell
+       * a revoked key from an untrusted one without reading the sentence,
+       * because the remedies differ and prose is not an API. See
+       * `PackageRefusalCode`.
+       */
+      code?: PackageRefusalCode;
+    };
 
 const MANIFEST_FILENAME = 'openmini.json';
 
@@ -35,6 +52,13 @@ export interface LoadMiniAppOptions {
    * no ids, so nothing can fail closed and every package loads unverified —
    * which is the pre-Phase-9 behaviour, preserved for callers that have not
    * configured trust yet.
+   *
+   * A host whose trust configuration failed to load must **not** reach for
+   * that default. Omitting the store registers nothing, so nothing fails
+   * closed, and an impostor of a registered id loads as merely unverified:
+   * fail-open wearing the word "empty". The answer is to refuse the load
+   * path outright and say why — see `trustStoreFromConfig` and
+   * docs/plans/phase-11.md.
    */
   trustStore?: PackageTrustStore;
 }
@@ -143,7 +167,9 @@ export async function loadMiniAppFromUrl(
     trustStore: options.trustStore,
   });
   if (!verification.ok) {
-    return { ok: false, reason: verification.reason };
+    // The refusal is passed through whole. The prose is unchanged and still
+    // what an operator reads; the code is what the host branches on.
+    return { ok: false, code: verification.code, reason: verification.reason };
   }
 
   return {

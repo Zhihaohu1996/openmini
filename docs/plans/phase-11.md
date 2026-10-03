@@ -1,15 +1,20 @@
-# Phase 11 — trust lifecycle: operator-owned trust configuration, revocation and rotation
+# Phase 11 — trust lifecycle: operator-owned trust configuration, revocation and rotation (completed)
 
-**Status: approved, implementation not started.** Approved on 2026-09-23 against base `1604212`.
+**Status: complete.** Approved on 2026-09-23 against base `1604212`; delivered in eight work
+items, W1–W8.
 
-This file is the approved plan. It is written *before* implementation deliberately, so that the
-scope, ordering, invariants and exit criteria survive across sessions and do not have to be
-reconstructed from conversation memory. At close-out it becomes the phase record, in the same
-form as [phase-9.md](phase-9.md) and [phase-10.md](phase-10.md).
+This file was written as the approved plan *before* implementation, so that the scope, ordering,
+invariants and exit criteria would survive across sessions rather than being reconstructed from
+conversation memory. It is now the authoritative **phase record**, in the same form as
+[phase-9.md](phase-9.md) and [phase-10.md](phase-10.md). The plan text below is preserved as it
+was approved — including the parts that describe intent in the future tense — and the outcome is
+recorded in ["What actually shipped"](#what-actually-shipped) at the end. Where the two differ,
+the close-out sections are authoritative.
 
-Living documentation for the delivered system will be
-[security/integrity.md](../security/integrity.md) and [cli.md](../cli.md). This file is the plan
-and then the history; it is not updated as the code changes afterwards.
+Living documentation for the delivered system is
+[security/integrity.md](../security/integrity.md), [cli.md](../cli.md) and
+[security/bridge.md](../security/bridge.md). This file is the plan and then the history; it is
+not updated as the code changes afterwards.
 
 ---
 
@@ -393,3 +398,198 @@ on that is indistinguishable from a regression.
 - Pushed to `main`, CI green, and the run recorded in this file at close-out.
 - This file updated with the actual commit sequence, the verification table, the CI run link, and
   the limitations carried into Phase 12.
+
+---
+
+# What actually shipped
+
+Everything below this line was written at close-out and is authoritative where it differs from
+the plan above.
+
+## Commit sequence
+
+Base: `1604212` — Phase 10 W9 close-out.
+
+| Commit | Item | Type | What it delivered |
+| --- | --- | --- | --- |
+| `23f7272` | — | `docs` | The approved plan above, recorded before implementation. |
+| `ba7c0d3` | W1 | `feat(shared)` | [`trustConfig.ts`](../../packages/shared/src/trustConfig.ts): the `openmini.trust.json` format, types, parser, validator and issue formatter. Unknown fields and unknown versions rejected; `status` required, never inferred; the packages map built with a null prototype. **Wired to nothing** — no load outcome changed. |
+| `16dfe90` | W2 | `feat(runtime)` | `PackageTrustStore` widened to `string \| TrustedKeyEntry` **per element**, with `normalizeTrustEntry` as the one place the legacy contract is written down. Refusal `code`s added over the refusals that already existed, every message byte-for-byte unchanged. **No behavioural change**; the provisional "a revoked key still loads" state pinned by a test so W3 would announce itself by breaking it. |
+| `2c02e14` | W3 | `feat(runtime)` | **The flip.** A `revoked` key refuses the load with its own `revoked-key` code, returning *before* the trusted/untrusted question is asked, so it can never fall through to `untrusted-key`. Registration stays presence-of-id. Revocation wins over a contradictory `active` duplicate, and matches on SPKI rather than on `keyId`. |
+| `ea8eb60` | W4 | `test(runtime)` | Rotation continuity and the revocation/migration edge, as an integration test over real keys → `verifyPackage` → `deriveStorageScope` → `resolveStorageScope` → a real provider. **No production code.** |
+| `7ae50ca` | W5 | `feat(cli)` | `openmini trust validate [path]`, reusing W1's parser and formatter so the CLI and the host print identical text. Tested through the built binary, per the Phase 9 W5 precedent. |
+| `64fe10a` | W6 | `feat(host)` | The host fetches a real `openmini.trust.json` at startup and **refuses the URL load path entirely** when it is missing or invalid. `PackageRefusalCode` propagated through `LoadMiniAppResult`; `describeRefusal` surfaces revoked distinctly; the fixture generator emits the JSON and gained the `revoked-key` and `storage-rotated` fixtures. |
+| `425ff51` | W7 | `test(e2e)` | Fourteen browser cases over the four the plan called for, all URL-loaded with real provenance and asserted against real IndexedDB. **No production code.** |
+| *this commit* | W8 | `docs` | Living documentation narrowed, and this file converted into the phase record. |
+
+Machinery landed **before** the flip, for the reason Phase 10 recorded: no commit in history
+should have the shape "a legitimate package stopped loading", because a commit `git bisect` lands
+on that is indistinguishable from a regression. W1 and W2 changed no load outcome at all; W3 is
+the single commit where one changes.
+
+## What Phase 11 delivers, precisely
+
+- **Operator-owned trust configuration.** `openmini.trust.json`, read by the host at startup,
+  replacing a generated TypeScript module compiled into its bundle. A self-hoster registers an id
+  by editing a file, not by editing source and rebuilding.
+- **Revocation is supported.** A key registered for an id and marked `revoked` refuses the load,
+  with its own `revoked-key` refusal code.
+- **Key rotation with two overlapping valid keys is supported.** A successor `active` alongside a
+  predecessor `revoked`: the successor verifies, the predecessor is refused *as revoked*.
+- **A revoked key never downgrades** to `untrusted-key`, to `unsigned`, or to any permissive or
+  unverified path. It produces no provenance, so no storage scope can be derived from it.
+- **Verified storage remains keyed by manifest identity, never by `keyId`.** Phase 11 changed no
+  part of the Phase 10 derivation; it proved the property holds across a rotation.
+- **Revocation can make verified data temporarily unreachable, and never deletes it.** There is
+  still no `delete` and no `clear` on the storage provider. Re-registering the id restores access.
+- **A missing or invalid trust configuration disables the URL-loaded Mini App path**, and the host
+  says why. It does **not** fall back to an empty trust store — which would register nothing, so
+  nothing would fail closed, and an impostor of a registered id would load as merely unverified.
+- **CLI validation.** `openmini trust validate`, sharing the host's parser and formatter.
+- **Browser-level lifecycle evidence.** Fourteen e2e cases against real packages, real provenance
+  and real IndexedDB.
+
+### Legacy `readonly string[]` trust entries
+
+`PackageTrustStore` widened from `Readonly<Record<string, readonly string[]>>` to accept
+`string | TrustedKeyEntry` per element. A bare string still means exactly what it meant before
+Phase 11 — a key that may sign — and normalizes to `{ publicKey, status: 'active' }`.
+
+**The widening changed no legacy behaviour, and did so verifiably.** W2 moved the representation
+and W3 changed the behaviour, in separate commits; every pre-existing refusal message is
+unchanged; and the Phase 9 verification tests passed through W2 unmodified apart from two import
+lines. A host part-way through rewriting its configuration — some entries bare strings, some
+keyed — is a supported state, pinned by a regression test that uses both spellings in one entry
+and by another that keeps a legacy string active alongside a revoked entry.
+
+**Phase 11 deliberately sets no transition point.** The bare-string form is supported, not merely
+tolerated. Deprecating or removing it belongs to whichever later phase first has a reason to
+force it, and no deadline, warning or migration path is implied by this phase.
+
+## Verification
+
+Run locally at `425ff51` (W7) and re-run at W8 for the documentation-only change.
+
+| Gate | Result |
+| --- | --- |
+| `pnpm lint` | pass |
+| `pnpm typecheck` | pass |
+| `pnpm build` | pass |
+| `pnpm test` | **1072 pass** (runtime 512, cli 179, shared 157, manifest 142, host 44, sdk 36, ui 2) |
+| `pnpm e2e` | **49 pass**, Chromium — 35 pre-existing **unmodified**, 14 new |
+| `pnpm format:check` | fails locally on a pre-existing CRLF artifact only — see below |
+
+Unit tests grew 912 → 1072. Browser e2e grew 35 → 49. No pre-existing e2e spec was modified.
+
+`storageIdCollision.test.ts` is unmodified and passing, as invariant 7 requires.
+
+### Pre-existing test files modified, and why
+
+Two, both called out in their own commit messages:
+
+- **`packageVerification.test.ts`** (W3) — the `what W2 deliberately does not do yet` block was
+  deleted. It existed to pin the provisional state so that W3 would announce itself by breaking
+  it. It did. Thirteen tests replaced it.
+- **`App.test.tsx`** (W6) — the host now fetches a trust configuration at startup, so the two
+  existing tests had to answer that request; their previous mock served the manifest for every
+  URL, which the parser rejects, which would have disabled the control they exercise. Only the
+  mock routing changed; their assertions did not.
+
+### Fail-before / pass-after
+
+Every behavioural claim was checked by mutation rather than inferred from a green run. The
+production code was reverted in each case and the tree confirmed clean before committing.
+
+| Mutation | Effect |
+| --- | --- |
+| `packageVerification.ts` reverted to its W2 content | 8 W3 tests fail; 4 W4 tests fail |
+| `deriveStorageScope` appends the `keyId` to the verified key | 7 W4 tests fail; 3 W7 browser cases fail |
+| CLI replaces the shared formatter with its own wording | 6 W5 tests fail |
+| Host substitutes `{}` for an unavailable trust configuration | 2 W6 tests fail, and 1 W7 browser case — the host fetches and loads the impostor |
+| `trustStoreFromConfig` drops revoked keys while mapping | 2 W6 tests fail |
+| `loadMiniAppFromUrl` drops the refusal `code` | 3 W6 tests fail |
+| `describeRefusal` collapses revoked into the untrusted-key message | 1 W7 browser case fails |
+
+W7's forced-submit case needed one extra check before it could be trusted: "the button is
+disabled and nothing loaded" is also true of a broken page, so the technique was first run
+against a *working* configuration to confirm it genuinely reaches the handler and fetches. It
+does.
+
+### Browser evidence (W7)
+
+[`e2e/trust-lifecycle.spec.ts`](../../e2e/trust-lifecycle.spec.ts), every case driven through the
+host's own "Load by URL" control against packages served from `public/miniapps/` and registered
+through the same `openmini.trust.json` the host fetches at startup — never through `?scenario=`,
+which supplies no provenance and so proves nothing about this layer.
+
+| Property | Cases |
+| --- | --- |
+| A revoked key is refused **as revoked** | code is `revoked-key` and is neither `untrusted-key` nor `unsigned-registered`; the remedy text says re-sign rather than re-trust; no sandbox, iframe, provenance or storage scope is produced |
+| Rotation keeps the verified namespace | successor loads verified; reads `v1:id:<id>` data from real IndexedDB; writes land in the id-named namespace and in neither the origin-bound nor the bare one; both eras survive a reload |
+| Revocation strands rather than exposes | refused with the data still in `v1:id:<id>` afterwards; not spilled into the origin-bound namespace |
+| No usable trust configuration refuses the path | missing and invalid both disable the control and say why; a forced submit past the disabled control fetches nothing; the same package *is* refused with a code when the configuration works; an unregistered, unsigned package cannot be loaded either, so the path itself is shut |
+
+### CI
+
+Pushed to `main` at `__W8_COMMIT__`.
+
+| | |
+| --- | --- |
+| Run | __CI_RUN_URL__ |
+| Result | __CI_RESULT__ |
+
+## Limitations carried into future phases
+
+Phase 11 narrowed the first of these. None of the rest moved.
+
+1. **No remote trust distribution or registry.** *Narrowed, not closed.* Revocation and rotation
+   exist as an explicit lifecycle in a file the operator owns, so a compromised key is retired by
+   marking it `revoked` rather than by deleting it from source. There is still no registry, no
+   remote trust distribution, no network-fetched revocation list, no CRL, no OCSP, no
+   transparency log, no key discovery, and no PKI. The trust configuration is a local file;
+   revoking a key affects the hosts whose file you edit and no others.
+2. **No expiry or timestamp semantics.** `status` has two values and no validity window, and
+   `expires` remains an unknown field rejected by both formats.
+
+   Deferred deliberately, and the reason is the point. An expiry would make the load outcome
+   depend on the **host's clock**, so a clock that is wrong or rolled back would re-admit a key
+   the operator retired — weakest exactly when it matters. It also cannot establish *when*
+   something was signed: without a trusted timestamp or some other freshness authority, an
+   attacker keeps serving a package signed before the deadline, and the deadline says nothing
+   about signing time. A revocation an operator writes down needs neither a clock nor an
+   authority, which is why this phase shipped revocation instead.
+3. **No trust on first use**, in any form. Third phase in a row.
+4. **No real user or auth identity.** `user.getProfile()` is still a stub. Package identity is
+   not user identity, and nothing in the trust configuration describes a person. Phase 11 did
+   complete one precondition for it: the verified tier is entered by registration, and
+   registration is now something an operator can actually perform.
+5. **Same-origin collisions for unregistered packages remain**, and remain intentionally distinct
+   from verified identity. Two *unsigned* packages served from one origin that both claim an id
+   share a store; the origin tier separates packages without identifying them. Pinned by
+   `storageIdCollision.test.ts`, unmodified.
+6. **Signing-key custody is local-file based.** The private key is an unencrypted file written
+   `0600`. Encrypting it still needs a KDF, a passphrase prompt and an answer for
+   non-interactive CI.
+7. **Concurrent multi-tab migration** (carried from Phase 10, untouched).
+8. **Two stale docstrings** Phase 9 falsified (carried from Phase 10, untouched — out of scope by
+   decision 4).
+9. **Release, publishing and process work remains deferred** — no publishing workflow, no
+   `SECURITY.md`, no CI matrix.
+10. **Optional W11 — `.gitattributes` and CRLF normalization — was not implemented.** Excluded by
+    decision 4 and invariant 10, and still excluded at close-out.
+
+### The CRLF diagnosis, preserved
+
+`pnpm format:check` fails on this Windows checkout, and did so before Phase 11 began. It is a
+working-tree artifact, not content: `core.autocrlf=true` checks files out with CRLF, Prettier
+reads them from the worktree and objects, while the committed blobs are LF and identical to what
+CI checks out on Linux.
+
+The diagnostic that settles it, and the one to use rather than reformatting: compare
+`git hash-object <file>` against `git rev-parse HEAD:<file>`. Throughout Phase 11 these matched
+for every file `format:check` named, each of which was a file the phase did not modify. CI runs
+`format:check` on a Linux checkout and passes.
+
+Reformatting those files locally would produce a diff that is pure line endings, touching files
+outside the phase's scope. Adding `.gitattributes` is the real fix and is exactly what W11 would
+be. Both were declined.

@@ -1,4 +1,4 @@
-# Mini App JS Bridge & Capability API — Phase 4 (+ Phase 5 persistent storage, Phase 7 network, Phase 10 storage scoping)
+# Mini App JS Bridge & Capability API — Phase 4 (+ Phase 5 persistent storage, Phase 7 network, Phase 10 storage scoping, Phase 11 trust lifecycle)
 
 Phase 4 layers a small, deny-by-default RPC protocol on top of the Phase 3
 [sandbox boundary and handshake](sandbox.md), giving a Mini App a real (if
@@ -257,6 +257,14 @@ which provider is plugged in):
     entry is an array of acceptable keys precisely because rotation means two
     are valid at once; naming the key would make routine key rotation move an
     app's data.
+
+    Phase 11 turned that from an anticipated case into a real one — a key can
+    now be marked `revoked` while a successor is `active` — and then proved
+    the property rather than restating it: a package re-signed with the
+    successor reads the data the predecessor's era wrote, asserted in a unit
+    test and in a real browser against real IndexedDB. **Verified storage
+    remains keyed by manifest identity, not by `keyId`.** Phase 11 changed no
+    part of this derivation.
   - **An unverified package is scoped by origin, not by path.** Anyone who can
     publish at `https://host/evil/` can publish at `https://host/app/`, so a
     path buys no isolation while breaking any app that moves.
@@ -269,7 +277,10 @@ which provider is plugged in):
   share a store. They are already mutually trusting, and a path is not a
   security boundary here. Pinned by
   [`storageIdCollision.test.ts`](../../packages/runtime/src/bridge/storageIdCollision.test.ts),
-  which also documents what Phase 10 closed.
+  which also documents what Phase 10 closed. This is intentionally a
+  different thing from verified identity, and Phase 11 did not change it:
+  the origin tier separates packages without identifying them, so two
+  unsigned packages on one origin remain indistinguishable to it.
 
   It remains bounded by the trust model as well: loading a Mini App by URL is
   a host-operator action, documented in [sandbox.md](sandbox.md) as
@@ -288,6 +299,24 @@ which provider is plugged in):
   user identity is sequenced *after* package identity rather than before it:
   a credential needs somewhere only its owner can reach, and Phase 10 is what
   supplies that.
+
+  Phase 11 completed the other half of that precondition: the verified tier
+  is entered by registration, and registration is now something an operator
+  can actually do — by editing `openmini.trust.json` rather than a generated
+  module compiled into the host's bundle. **Real user identity is still not
+  delivered**, and `user.getProfile()` remains the stub described above.
+
+- **Revocation makes verified data unreachable, and never deletes it
+  (Phase 11).** A package whose signing key has been revoked for its id is
+  refused at load, so no sandbox exists to read its namespace and no scope is
+  ever derived for it. The bytes stay exactly where they were:
+  `MiniAppStorageProvider` still has no `delete` and no `clear`, and Phase 11
+  added neither. Rotating the id forward to a new active key restores access,
+  precisely because the namespace names the id rather than the key.
+
+  Migration is unaffected for the same reason: a revoked id is never selected
+  as an adoption source, because the load that would have adopted anything
+  never happens.
 
 - **Migration of existing data.** A package that becomes verified carries its
   previous storage forward, under a crash-safe protocol
@@ -518,9 +547,11 @@ behind would be useless.
   port handed off at handshake.
 - No Mini-App-driven RPC registration — the method registry is fixed by the
   host at bridge-creation time.
-- No real navigation/routing system, no real user/auth system — those two
-  stub handlers remain exactly enough to prove the architecture end-to-end
-  and no more. (`storage.*` is no longer a stub as of Phase 5 — see
+- No real navigation/routing system, and **no real user/auth system** —
+  those two stub handlers remain exactly enough to prove the architecture
+  end-to-end and no more. Phase 11 delivered package-identity lifecycle, not
+  user identity; `user.getProfile()` is still a stub, and nothing in the
+  trust configuration describes a person. (`storage.*` is no longer a stub as of Phase 5 — see
   ["Persistent storage.* (Phase 5)"](#persistent-storage-phase-5); `network.*`
   is real as of Phase 7.)
 - No redirect-following, and no way to tell a blocked redirect from any other

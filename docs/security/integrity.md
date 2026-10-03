@@ -1,4 +1,4 @@
-# Package integrity and identity — Phase 9
+# Package integrity and identity — Phase 9 (+ Phase 11 trust lifecycle)
 
 Phase 9 answers two questions a host could not previously ask about a Mini App package:
 
@@ -8,10 +8,16 @@ Phase 9 answers two questions a host could not previously ask about a Mini App p
 They are separate questions with separate answers, and this document keeps them apart
 throughout, because most of the design follows from not confusing them.
 
+Phase 11 adds a third, which only has an answer once the first two do:
+
+3. **Does the host still accept the key that signed them?** — the key lifecycle.
+
 Implemented in [`@openmini/shared`](../../packages/shared/src/integrity.ts) (format and
-verifier), [`@openmini/cli`](../../packages/cli/src/commands) (`keygen`, `sign`, `verify`)
-and [`@openmini/runtime`](../../packages/runtime/src/sandbox/packageVerification.ts)
-(load-time policy).
+verifier) and [`trustConfig.ts`](../../packages/shared/src/trustConfig.ts) (the trust
+configuration format), [`@openmini/cli`](../../packages/cli/src/commands) (`keygen`, `sign`,
+`verify`, `trust validate`) and
+[`@openmini/runtime`](../../packages/runtime/src/sandbox/packageVerification.ts) (load-time
+policy).
 
 ## The artifact: `openmini.sig.json`
 
@@ -91,9 +97,9 @@ and always prints the key.
 
 ## Load-time policy
 
-The trust store maps `manifest.id` → the complete base64 SPKI keys allowed to sign it. An id
-present in it is **registered**: the host is asserting it knows who owns that id, and that
-assertion is the only thing that makes failing closed possible.
+The trust store maps `manifest.id` → the keys allowed to sign it, each holding the complete
+base64 SPKI key material. An id present in it is **registered**: the host is asserting it knows
+who owns that id, and that assertion is the only thing that makes failing closed possible.
 
 The order in
 [`packageVerification.ts`](../../packages/runtime/src/sandbox/packageVerification.ts):
@@ -104,8 +110,8 @@ The order in
    every check below would be optional in practice.
 2. **The payload must claim the same `id` and `version` as the manifest.**
 3. **The manifest's bytes must match its signed digest.**
-4. **A registered id fails closed**: unsigned, or signed by an unregistered key, and it does not
-   load at all.
+4. **A registered id fails closed**: unsigned, signed by an unregistered key, or signed by a key
+   the host has **revoked** for that id, and it does not load at all.
 5. **An unregistered id may load unverified.** The host has expressed no opinion about who owns
    it, so there is nothing to fail closed against.
 
@@ -113,13 +119,152 @@ Every combination, and what it produces:
 
 | Signature | Id registered? | Result |
 | --- | --- | --- |
-| valid, registered key | yes | loads, `verified: true` |
+| valid, registered key, `active` | yes | loads, `verified: true` |
+| valid, registered key, `revoked` | yes | **refused** (`revoked-key`) |
 | valid, other key | no | loads, `verified: false` / `untrusted-key` |
-| valid, other key | yes | **refused** |
+| valid, other key | yes | **refused** (`untrusted-key`) |
 | absent | no | loads, `verified: false` / `unsigned` |
-| absent | yes | **refused** |
-| present but invalid | either | **refused** |
+| absent | yes | **refused** (`unsigned-registered`) |
+| present but invalid | either | **refused** (`signature-invalid`) |
 
+### Refusals are values, not prose
+
+Every refusal carries a `code` alongside its human `reason`
+(`PackageRefusalCode`), and `loadMiniAppFromUrl` passes it through to the host. A host has to
+render "revoked" differently from "never registered" because the remedies differ, and telling
+them apart by matching the message text would make the wording load-bearing. The reason strings
+are unchanged from Phase 9; the code is additive.
+
+The code is present when a package was fetched and then refused, and absent for failures that are
+not verification outcomes at all — a 404, a timeout, an unparseable manifest. Those are not
+refusals and were deliberately not given codes.
+
+
+## Trust configuration and the key lifecycle (Phase 11)
+
+Phase 9 made the trust store a value the host passed in; in practice the shipped host compiled a
+generated TypeScript module into its bundle, so registering an id meant editing source and
+rebuilding. Phase 11 makes it a file the operator owns, and gives the keys in it a lifecycle.
+
+### `openmini.trust.json`
+
+A host-operator-owned document, parsed and validated by
+[`trustConfig.ts`](../../packages/shared/src/trustConfig.ts) in `@openmini/shared` — deliberately
+**not** beside the manifest parser. `openmini.json` is written by the Mini App author and travels
+with the package; this file is written by whoever runs the host and is the one input to the load
+decision the package cannot influence. They sit on opposite sides of the trust boundary, so they
+do not share a package.
+
+```json
+{
+  "trustConfigVersion": 1,
+  "packages": {
+    "com.example.app": {
+      "keys": [
+        { "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE…", "status": "active", "keyId": "2026-laptop" },
+        { "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE…", "status": "revoked" }
+      ]
+    }
+  }
+}
+```
+
+The rules carry over from `openmini.sig.json`, because the reasoning has not changed:
+
+- **Unknown fields are rejected**, not best-effort parsed. A field this reader drops is a field a
+  future reader enforces.
+- **An unrecognized `trustConfigVersion` is refused**, not downgraded.
+- **`publicKey` is the complete base64 SPKI key material.** `keyId` is an operator-facing label
+  so a human can tell two blobs apart; nothing in the decision reads it, on either status.
+- **`status` is required and never inferred.** Defaulting an omitted status to `active` would
+  mean a key grants trust because a field was forgotten.
+- **Every issue is collected, but nothing is registered unless the whole file validates.** There
+  is no partial trust configuration.
+
+### Revocation
+
+**Revocation is supported, and a revoked key refuses the load.** It produces `ok: false` with the
+`revoked-key` code.
+
+**A revoked key never downgrades to `untrusted-key`, to `unsigned`, or to any unverified path.**
+This is the property the phase is built around, and it is not merely cosmetic. `untrusted-key`
+refuses a *registered* id, but it is also the identity an *unregistered* id carries while loading
+unverified into the shared origin storage tier. A revoked key reported that way would sit one
+policy edit away from running, and the operator would have no way to tell a compromised key from
+an unknown one. So the refusal happens before the trusted/untrusted question is asked, and
+produces no provenance at all — which means no storage scope can be derived from it.
+
+**Registration is the presence of the id, not the presence of a usable key.** An id whose keys
+are *all* revoked is still registered, so an unsigned package claiming it still fails closed.
+Revoking every key is not a route back to the permissive unregistered path.
+
+**Revocation is per id.** A key revoked for `com.example.a` and active for `com.example.b` is
+refused for the first and trusted for the second.
+
+**`revoked` is retained, not deleted.** Removing a compromised key from the list would stop it
+signing, but it would also erase the record that it was ever trusted and make the refusal
+indistinguishable from one for a key that was never registered — two situations with different
+remedies.
+
+### Key rotation
+
+**Rotation with two overlapping valid keys is supported.** Add the successor as `active`, mark
+the predecessor `revoked`. During and after that change:
+
+- a package signed by the successor loads verified;
+- a package still signed by the predecessor is refused as `revoked-key`, not as `untrusted-key`;
+- **the verified storage namespace does not move.**
+
+That last point is the one rotation depends on. The verified namespace is `v1:id:<id>` and is
+derived from the **manifest identity, never from the `keyId`**. If it named the signing key,
+rotating would strand an app's data — turning routine key hygiene into a data-loss event, which
+is how you get operators who never rotate. Phase 11 did not change that derivation; it proved the
+property holds, in unit tests and in a real browser against real IndexedDB.
+
+### What revocation does to data
+
+**Revoking a key makes a package's verified-tier data unreachable. It does not delete it.** There
+is no `delete` and no `clear` on `MiniAppStorageProvider`, and Phase 11 adds neither: the load is
+refused, so nothing can read the namespace, and the bytes stay where they are. Re-registering the
+id — rotating forward to a new active key — restores access, precisely because the namespace
+named the id all along.
+
+Migration is unaffected: a revoked id is never selected as an adoption source, because the load
+that would have adopted anything never happens.
+
+### Legacy trust entries
+
+`PackageTrustStore` widened from `Readonly<Record<string, readonly string[]>>` to accept a
+`string | TrustedKeyEntry` **per element**. A bare string still means exactly what it meant
+before Phase 11 — a key that may sign — and normalizes to `{ publicKey, status: 'active' }`.
+
+This was additive and changed no existing behaviour: the widening (W2) and the behavioural flip
+(W3) are separate commits, every pre-existing refusal message is byte-for-byte unchanged, and the
+Phase 9 verification tests passed unmodified through the widening. A host part-way through
+rewriting its configuration — some entries bare strings, some keyed — is a supported state, and a
+regression test pins both spellings working side by side in one entry.
+
+Note the deliberate asymmetry with the config *file*, where an omitted `status` is rejected rather
+than defaulted. There the operator is writing a lifecycle document and silence is ambiguous; in
+the legacy store the absence of the field is the absence of the concept.
+
+**Phase 11 does not set a transition point.** The bare-string form is supported, not merely
+tolerated, and when it is deprecated or removed belongs to whichever later phase first has a
+reason to force it.
+
+### The host reads the file, and fails closed without it
+
+The host fetches `openmini.trust.json` at startup, validates it with the same parser and renders
+issues with the same formatter `openmini trust validate` uses, so the two say the same thing about
+the same file.
+
+**If the configuration is missing or invalid, the host refuses the URL-loaded Mini App path
+entirely and says why. It does not fall back to an empty trust store.** This is the one place
+where "fail closed" needs stating carefully. An empty store registers no ids, so *nothing* fails
+closed, and an impostor of a registered id would load as merely unverified — fail-open wearing
+the word "empty", and worse than having no trust configured at all, because the operator believes
+it is configured. There is deliberately no empty-store fallback anywhere in the API for a caller
+to reach for.
 ### Digests are enforced on every read, not only at load
 
 `FetchResourceProvider` checks each resource's bytes against its signed digest, and **refuses a
@@ -158,9 +303,16 @@ a fixture read as a package that failed its check.
 openmini keygen --out <keyfile> [--force]
 openmini sign [dir] --key <keyfile>
 openmini verify [dir]
+openmini trust validate [dir|openmini.trust.json]
 ```
 
 See [cli.md](../cli.md) for the full command reference.
+
+`trust validate` runs the same parser and prints the same issue text the host runs, so a
+configuration it accepts is one the host accepts. Like `verify`, it checks the shape of a file
+and not whether the keys in it are the right ones: a configuration listing an attacker's key
+validates exactly as a correct one does. Only the operator knows which key belongs to which
+publisher.
 
 `build` remains deterministic and **unsigned**. ECDSA is randomized, so a build that signed its
 own output could never be byte-reproducible. Keeping them separate means anyone can rebuild a
@@ -174,19 +326,41 @@ Skipping links instead would silently drop a file the author put there.
 non-interactive CI, none of which this phase makes. It is written `0600`, and `keygen` says so in
 its output. Keep it out of your package directory and out of version control.
 
-## What this phase does not provide
+## What this is still not
 
-- **Key distribution and revocation.** The trust store is a static map supplied by the host
-  operator. There is no registry, no expiry, no revocation list, and no rotation protocol. A
-  compromised key is removed by editing the host's configuration.
+Phase 11 narrowed the first of these rather than removing it. The rest stand unchanged.
+
+- **Key distribution.** *Narrowed, not closed.* Revocation and rotation now exist as an explicit
+  lifecycle in a file the operator owns, and a compromised key is retired by marking it `revoked`
+  rather than by deleting it from source. What does **not** exist is any way to learn about that
+  from anywhere else: no registry, no remote trust distribution, no revocation list fetched over
+  the network, no CRL, no OCSP, no transparency log, no key discovery, and no PKI of any kind.
+  The trust configuration is a local file, and each host operator maintains their own. Revoking a
+  key affects the hosts whose file you edit and no others.
 - **Signature expiry or timestamping.** A valid signature is valid forever. `expires` is not an
-  ignored field — unknown fields are rejected — but nor is it a supported one.
+  ignored field — unknown fields are rejected in both `openmini.sig.json` and
+  `openmini.trust.json` — but nor is it a supported one, and `status` has exactly two values with
+  no validity window.
+
+  This is deferred rather than overlooked, and the reason is worth stating. An expiry would make
+  the load outcome depend on the **host's clock**: a clock that is wrong, or deliberately rolled
+  back, would re-admit a key the operator retired, so the mechanism would be weakest exactly when
+  it mattered. Expiry also cannot establish *when* something was signed. Without a trusted
+  timestamp or some other freshness authority, an attacker simply keeps serving a package that
+  was signed before the deadline, and the deadline proves nothing about signing time. Adding
+  `expires` would additionally need a payload-format bump. A revocation an operator writes down
+  needs none of that, which is why Phase 11 shipped revocation and not expiry.
 - **Trust on first use, or any automatic trust.** An unregistered id is never promoted to
-  verified.
+  verified, and nothing a package presents can register it.
 - **Verified identity for unregistered ids.** An unregistered id never loads as verified, whatever
   it is signed with. Phase 10 does give such packages *storage* isolation by origin — see below —
   but that is separation, not identity: it says two packages are different, never who either one
-  is.
+  is. There is no global package identity: an id means what a given host's configuration says it
+  means, and nothing more.
+- **Real user or auth identity.** `user.getProfile()` remains a stub. Package identity is not
+  user identity, and Phase 11 delivers nothing toward the latter.
+- **Encrypted signing-key custody.** The private key stays an unencrypted local file, written
+  `0600`. Custody is the operator's; there is no agent, no HSM, and no keychain integration.
 
 ## What verification buys in storage (Phase 10)
 
@@ -204,6 +378,15 @@ storage namespace:
 **Still open:** two *unsigned* packages served from the **same origin** that both claim one id
 share a store. Pinned by
 [`storageIdCollision.test.ts`](../../packages/runtime/src/bridge/storageIdCollision.test.ts).
+This is deliberately a different thing from verified identity and remains so: the origin tier
+separates packages without identifying them, and registering an id — or serving from distinct
+origins — is what closes it.
+
+**Phase 11 changed nothing here.** The namespace is still derived from the manifest identity,
+never from the `keyId`, which is exactly what lets a key rotate without moving an app's data. A
+revoked key makes the verified namespace unreachable while it is the only key — the load is
+refused, so nothing can read it — but the bytes are not deleted and rotating forward restores
+access.
 
 **Signing does not attest inherited data.** A package that becomes verified can carry its
 previous storage forward, and that migration confers no attestation on the bytes it copies — a

@@ -1,4 +1,4 @@
-# `@openmini/cli` — Mini App packaging toolchain (Phase 8, + Phase 9 signing)
+# `@openmini/cli` — Mini App packaging toolchain (Phase 8, + Phase 9 signing, + Phase 11 trust)
 
 A Mini App is loaded as a **single self-contained HTML document** whose CSP
 permits exactly one inline script, identified by its `sha256` hash. Producing
@@ -14,6 +14,7 @@ openmini dev [dir] [--port <n>]
 openmini keygen --out <keyfile> [--force]
 openmini sign [dir] --key <keyfile>
 openmini verify [dir]
+openmini trust validate [dir|openmini.trust.json]
 ```
 
 Every command exits non-zero on failure, so CI can rely on the exit status.
@@ -253,11 +254,109 @@ signed with an attacker's own key verifies here exactly as a legitimate one
 does — only a host's trust store can reject that, so the `keyId` and public
 key are always printed for you to compare.
 
-## What this phase does not provide
+## Trust configuration (Phase 11)
 
-The CLI still makes no claim about **key distribution**: there is no
-registry, no expiry, no revocation, and no rotation protocol. A host operator
-configures trusted keys by hand, and removes a compromised one the same way.
-See the "What this phase does not provide" section of
+```
+openmini trust validate [dir|openmini.trust.json]
+```
+
+`openmini.trust.json` is the **host operator's** file: which keys may sign which package ids, and
+which of those keys are still valid. It is the one input to the load decision a package cannot
+influence, so it sits on the opposite side of the trust boundary from `openmini.json` — which the
+Mini App author writes and ships. The format and the load-time semantics are in
+[security/integrity.md](security/integrity.md).
+
+```json
+{
+  "trustConfigVersion": 1,
+  "packages": {
+    "com.example.app": {
+      "keys": [
+        { "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE…", "status": "active", "keyId": "2026-laptop" },
+        { "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE…", "status": "revoked" }
+      ]
+    }
+  }
+}
+```
+
+The `publicKey` values are exactly what `openmini keygen` prints and what `openmini verify`
+reports for a signed package, so registering a key is a copy, not a transformation.
+
+### `openmini trust validate`
+
+Checks the file before a host has to. It adds **no validation of its own** — it runs the parser
+and the issue formatter from `@openmini/shared` that the host runs, so a configuration this
+accepts is one the host accepts, and the two print identical text about identical files. Exits 0
+if valid, 1 otherwise.
+
+A valid run reports what the file actually registers, sorted so two runs print the same thing and
+two configurations diff cleanly:
+
+```
+/srv/openmini/openmini.trust.json: valid (2 packages, 3 keys)
+  com.example.app: 1 active key, 1 revoked
+  com.example.retired: registered, but nothing may currently sign it (1 revoked)
+```
+
+That second line is spelled out rather than printed as "0 active keys" because it is the case
+most likely to be misread. **Revoking every key does not un-register the id.** Registration is
+the presence of the id, so a package claiming it still fails closed rather than falling back to
+loading unverified — which is the point, but it surprises an operator who expected the app to
+keep working.
+
+A missing file is reported as unreadable, not as invalid: the remedies differ — write one, versus
+fix the one you have.
+
+**`trust validate` does not decide whether the keys are the right ones.** This is the mirror of
+the note on `verify`. That command checks a package against its signature and declines to say
+whether the key should be trusted; this one checks the file where that trust is declared and
+declines to say whether the keys in it belong to the publishers named. A configuration listing an
+attacker's key validates exactly as a correct one does. Only you know which key is whose, and
+nothing in the file can assert it for you.
+
+### Rotating a key
+
+```bash
+openmini keygen --out new-key.json          # 1. mint the successor
+# 2. add its publicKey to openmini.trust.json as "status": "active",
+#    and change the old entry to "status": "revoked" — keep both entries
+openmini trust validate /srv/openmini       # 3. check the file before deploying it
+openmini sign dist --key new-key.json       # 4. re-sign with the successor
+```
+
+Both keys are listed at once on purpose: that overlap is what lets a package already in the wild,
+still signed by the predecessor, produce a refusal that says *revoked* rather than *unknown key*.
+Delete the old entry instead and you lose that distinction, and with it the operator's ability to
+tell a retired key from one that was never registered.
+
+The app's stored data does not move. The verified storage namespace is derived from the manifest
+id, never from the signing key — see
+[security/bridge.md](security/bridge.md#persistent-storage-phase-5).
+
+## What the CLI still does not provide
+
+Narrowed by Phase 11, not closed. Revocation and rotation now exist, and
+`trust validate` checks the file that expresses them — but only as a **local
+file each operator maintains by hand**.
+
+- **No key distribution.** No registry, no remote trust distribution, no
+  revocation list fetched over the network, no CRL, no OCSP, no transparency
+  log, no PKI. Revoking a key changes the hosts whose file you edit and no
+  others, and there is no command to publish or discover one.
+- **No expiry or timestamping.** A signature does not go stale, and neither
+  does a trust entry. `status` has two values and no validity window. The
+  reason this is deferred rather than missing — that expiry would hang the
+  load decision on the host's clock, and could not establish signing time
+  without a trusted timestamp authority — is in
+  [security/integrity.md](security/integrity.md).
+- **No encrypted key custody.** `keygen` still writes an unencrypted private
+  key at `0600`. A KDF, a passphrase prompt, and an answer for
+  non-interactive CI are all still unsettled.
+- **No release or publishing workflow.** Packaging, signing and validating are
+  local commands; nothing here publishes a package, a key, or a trust
+  configuration anywhere.
+
+See the "What this is still not" section of
 [security/integrity.md](security/integrity.md), and the narrowed storage note
 in [security/bridge.md](security/bridge.md).

@@ -23,9 +23,10 @@ organization can run it without depending on a single vendor.
 
 ## Status
 
-**Phase 10: verified identity as a storage boundary.** The project now has a
-working end-to-end path from source to a verified, sandboxed Mini App whose
-data is scoped to the identity it proved:
+**Phase 11: trust lifecycle.** The project now has a working end-to-end path
+from source to a verified, sandboxed Mini App whose data is scoped to the
+identity it proved — and whose signing key the host operator can retire and
+rotate without losing that data:
 
 - **Phase 2** — the [`openmini.json` manifest format](docs/manifest.md),
   parsed and validated by `@openmini/manifest`.
@@ -47,11 +48,40 @@ data is scoped to the identity it proved:
   a verified package's data lives under its identity, an unverified
   package's under the origin it was served from, with a crash-safe migration
   for packages that become verified.
+- **Phase 11** — [operator-owned trust configuration](docs/security/integrity.md):
+  an `openmini.trust.json` the host reads at startup instead of a module
+  compiled into its bundle, with an explicit `active`/`revoked` key
+  lifecycle, key rotation that keeps an app's storage, an
+  `openmini trust validate` CLI command, and browser-level evidence for the
+  whole lifecycle.
 
-Still to come: key distribution and revocation, real user/auth/identity, and
-multi-view routing. A host operator still configures trusted keys by hand,
-and two **unsigned** packages served from the **same origin** that claim one
-id still share storage. See
+What Phase 11 does and does not claim, precisely:
+
+- **Revocation is supported.** A key marked `revoked` for an id refuses the
+  load, with its own refusal code.
+- **Key rotation with two overlapping valid keys is supported** — a
+  successor `active` alongside the predecessor `revoked`.
+- **A revoked key never downgrades to `untrusted-key`**, to `unsigned`, or to
+  any unverified path.
+- **Verified storage stays keyed by manifest identity, not by `keyId`**, so
+  rotating a key does not move an app's data.
+- **Revocation can make verified data temporarily unreachable; it never
+  deletes it.** Re-registering the id restores access.
+- **A missing or invalid trust configuration disables the URL-loaded Mini App
+  path** and says why, rather than falling back to an empty trust store —
+  which would register nothing, so nothing would fail closed.
+
+Still to come, and deliberately not provided: **no remote trust distribution
+or registry** of any kind (no CRL, no OCSP, no transparency log, no PKI) —
+the trust configuration is a local file each operator maintains; **no expiry
+or timestamp semantics**, because without a trusted timestamp authority an
+expiry would depend on the host's clock and could not establish when
+something was actually signed; **no trust on first use**; **no real
+user/auth identity** (`user.getProfile()` is still a stub); **local-file
+signing-key custody**, unencrypted at `0600`; and no release/publishing
+workflow. Two **unsigned** packages served from the **same origin** that
+claim one id still share storage — intentionally a different thing from
+verified identity. See
 [docs/security/integrity.md](docs/security/integrity.md) and
 [docs/security/bridge.md](docs/security/bridge.md) for the boundaries the
 current phases deliberately do **not** provide.

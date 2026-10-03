@@ -1,7 +1,8 @@
 # Phase 12 — session-scoped user identity (completed)
 
 **Status: complete.** Approved on 2026-10-03 against base `c443cfc`; delivered in eight work
-items, W1-W8.
+items, W1-W8, and merged to `main` at `4241fd3` with
+[CI green](https://github.com/Zhihaohu1996/openmini/actions/runs/37152399177).
 
 This file is the approved plan. It is written *before* implementation deliberately, so that the
 scope, ordering, invariants and exit criteria survive across sessions and do not have to be
@@ -462,14 +463,21 @@ land in the embedded tier — where the answer is anonymous for a reason unrelat
 
 ### CI
 
-Pushed to `main` as `c443cfc..__W8_COMMIT__`.
+Pushed to `main` as `c443cfc..4241fd3`.
 
 | | |
 | --- | --- |
-| Head SHA | `__W8_SHA__` |
-| Run | __CI_RUN_URL__ |
-| `build` job | __BUILD_RESULT__ |
-| `e2e` job | __E2E_RESULT__ |
+| Head SHA | `4241fd336c079665e47627b7eb524d3fe05b9f1b` (W8) |
+| Run | [CI #18](https://github.com/Zhihaohu1996/openmini/actions/runs/37152399177), event `push` |
+| `build` job | **success** — lint → format:check → build → typecheck → test |
+| `e2e` job | **success** — Chromium, 59 specs |
+| Result | **green** |
+
+Both jobs ran against that exact SHA, not a later one.
+
+The `build` job runs `pnpm format:check`, and it **passed on CI** while failing on the Windows
+working tree — the CRLF diagnosis below confirmed from the other side for the second phase
+running.
 
 ### The CRLF artifact, preserved
 

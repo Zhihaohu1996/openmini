@@ -1,7 +1,8 @@
 # Phase 11 — trust lifecycle: operator-owned trust configuration, revocation and rotation (completed)
 
 **Status: complete.** Approved on 2026-09-23 against base `1604212`; delivered in eight work
-items, W1–W8.
+items, W1–W8, and merged to `main` at `df58b54` with
+[CI green](https://github.com/Zhihaohu1996/openmini/actions/runs/37141422322).
 
 This file was written as the approved plan *before* implementation, so that the scope, ordering,
 invariants and exit criteria would survive across sessions rather than being reconstructed from
@@ -531,12 +532,21 @@ which supplies no provenance and so proves nothing about this layer.
 
 ### CI
 
-Pushed to `main` at `__W8_COMMIT__`.
+Pushed to `main` as `1604212..df58b54`.
 
 | | |
 | --- | --- |
-| Run | __CI_RUN_URL__ |
-| Result | __CI_RESULT__ |
+| Head SHA | `df58b547aed2b1455e178dd9676e078ab89f22d9` (W8) |
+| Run | [CI #16](https://github.com/Zhihaohu1996/openmini/actions/runs/37141422322), event `push` |
+| `build` job | **success** — lint → format:check → build → typecheck → test |
+| `e2e` job | **success** — Chromium |
+| Result | **green** |
+
+Both jobs ran against that exact SHA, not a later one.
+
+The `build` job runs `pnpm format:check`, and it **passed on CI** while failing on the Windows
+working tree. That is the CRLF diagnosis below confirmed from the other side: the committed
+content is LF and clean, and the local failure is a checkout artifact.
 
 ## Limitations carried into future phases
 

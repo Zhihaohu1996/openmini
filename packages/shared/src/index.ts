@@ -80,6 +80,9 @@ export type {
   BridgeCloseAckEnvelope,
 } from './bridge/protocol';
 
+export { ANONYMOUS_USER_PROFILE } from './bridge/user';
+export type { UserProfile } from './bridge/user';
+
 export {
   NETWORK_FETCH_METHODS,
   NETWORK_BODILESS_METHODS,

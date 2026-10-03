@@ -16,9 +16,9 @@ describe('createUserHandlers', () => {
 });
 
 /**
- * Phase 12 W2. The host profile and `ctx.provenance` both reach the
- * decision, and the decision ignores them. W3 is the single commit where a
- * verified package starts receiving the profile.
+ * Phase 12 W3. The host supplies a profile; only a verified package is told
+ * it. Every other outcome is the one shared anonymous constant, and the
+ * reasons are deliberately indistinguishable from each other.
  */
 
 const HOST_PROFILE: UserProfile = { id: 'u_1138', displayName: 'Ada' };
@@ -53,54 +53,83 @@ describe('the host profile reaches the handler', () => {
   });
 });
 
-describe('what W2 deliberately does not do yet', () => {
-  it('does not yet hand a verified package the host profile', () => {
-    // Pinned rather than left implicit, the way Phase 11 W2 pinned a revoked
-    // key still loading: W3 is the one commit where this flips, and breaking
-    // this test is how it announces itself.
-    //
-    // Nothing can reach a changed outcome in a running host today — no host
-    // supplies a profile until W5 — so this is a property of the threading,
-    // not a gap a deployed host has.
-    expect(getProfile({ profile: HOST_PROFILE }, contextWith(verified))).toEqual(
+describe('only a verified package learns who the user is', () => {
+  it('hands the host profile to a verified package', async () => {
+    const result = getProfile({ profile: HOST_PROFILE }, contextWith(verified));
+
+    expect(result).toEqual(HOST_PROFILE);
+  });
+
+  it('withholds it from a package that was loaded but not verified', async () => {
+    // `unsigned` and `untrusted-key` are separate cases on purpose: both
+    // carry provenance, so a gate written as `provenance !== undefined`
+    // would admit both while still passing every fixture-shaped test.
+    expect(getProfile({ profile: HOST_PROFILE }, contextWith(unsigned))).toEqual(
+      ANONYMOUS_USER_PROFILE,
+    );
+    expect(getProfile({ profile: HOST_PROFILE }, contextWith(untrusted))).toEqual(
       ANONYMOUS_USER_PROFILE,
     );
   });
 
-  it('resolves identically for every provenance shape', () => {
-    // The shapes W3 must start telling apart. Today they agree, which is
-    // what makes W3's diff the whole of the behavioural change.
-    const resolved = [undefined, verified, unsigned, untrusted].map((provenance) =>
-      resolveUserProfile(provenance, HOST_PROFILE),
+  it('withholds it when no package was loaded at all', async () => {
+    // The embedded tier: a static fixture or a test. Nothing was checked,
+    // so nothing is established, so nothing is told.
+    expect(getProfile({ profile: HOST_PROFILE }, contextWith(undefined))).toEqual(
+      ANONYMOUS_USER_PROFILE,
     );
-
-    expect(resolved).toEqual([
-      ANONYMOUS_USER_PROFILE,
-      ANONYMOUS_USER_PROFILE,
-      ANONYMOUS_USER_PROFILE,
-      ANONYMOUS_USER_PROFILE,
-    ]);
   });
 
-  it('ignores the host profile whether or not one was supplied', () => {
-    expect(resolveUserProfile(verified, HOST_PROFILE)).toEqual(
-      resolveUserProfile(verified, undefined),
+  it('gives a verified package the anonymous profile when the host has nobody to name', async () => {
+    // Not a refusal, and it must not look like one.
+    expect(getProfile({}, contextWith(verified))).toEqual(ANONYMOUS_USER_PROFILE);
+  });
+
+  it('does not depend on which registered key signed the package', async () => {
+    // Rotation continuity, the same claim Phase 11 made for the storage
+    // namespace: the entitlement follows the verified id, never the key.
+    const rotated: PackageProvenance = {
+      baseUrl: verified.baseUrl,
+      identity: { verified: true, id: 'com.example.notes', keyId: 'KEY-B-SUCCESSOR' },
+    };
+
+    expect(resolveUserProfile(rotated, HOST_PROFILE)).toEqual(
+      resolveUserProfile(verified, HOST_PROFILE),
     );
+  });
+
+  it('passes the host profile through unchanged rather than rebuilding it', async () => {
+    expect(resolveUserProfile(verified, HOST_PROFILE)).toBe(HOST_PROFILE);
+  });
+});
+
+describe('every reason for withholding is indistinguishable', () => {
+  it('returns the one shared constant, by identity, for all four reasons', () => {
+    // Invariant 2. If these differed at all -- a distinct object, an extra
+    // field, a thrown error -- a Mini App could tell "you are not trusted"
+    // apart from "nobody is signed in", and so probe the host for whether
+    // a session exists without being entitled to know whose.
+    expect(resolveUserProfile(unsigned, HOST_PROFILE)).toBe(ANONYMOUS_USER_PROFILE);
+    expect(resolveUserProfile(untrusted, HOST_PROFILE)).toBe(ANONYMOUS_USER_PROFILE);
+    expect(resolveUserProfile(undefined, HOST_PROFILE)).toBe(ANONYMOUS_USER_PROFILE);
+    expect(resolveUserProfile(verified, undefined)).toBe(ANONYMOUS_USER_PROFILE);
+  });
+
+  it('never reports why it withheld', async () => {
+    // The value carries no reason code, no extra key, nothing to branch on.
+    const withheld = getProfile({ profile: HOST_PROFILE }, contextWith(untrusted));
+
+    expect(Object.keys(withheld as object).sort()).toEqual(['displayName', 'id']);
+  });
+
+  it('does not throw for an unverified package', async () => {
+    // A rejection would be as distinguishable as a marker value, and would
+    // additionally tell the package that the capability exists at all.
+    expect(() => getProfile({ profile: HOST_PROFILE }, contextWith(unsigned))).not.toThrow();
   });
 });
 
 describe('the withheld value', () => {
-  it('is the shared constant itself, not a copy of its fields', () => {
-    // Identity, not equality. Three call sites will return this in W3 --
-    // unverified, no provenance, no host profile -- and returning the one
-    // frozen constant is what stops them drifting into three subtly
-    // different "anonymous" objects that a Mini App could tell apart.
-    expect(resolveUserProfile(verified, HOST_PROFILE)).toBe(ANONYMOUS_USER_PROFILE);
-    expect(getProfile({ profile: HOST_PROFILE }, contextWith(unsigned))).toBe(
-      ANONYMOUS_USER_PROFILE,
-    );
-  });
-
   it('cannot be mutated by a handler caller into something another caller sees', () => {
     const first = getProfile(undefined, contextWith(verified)) as UserProfile;
     expect(() => {

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MiniAppSandbox, PackageProvenance, SandboxStateListener } from '../sandbox/types';
 import { createBridgeDispatcher } from './dispatcher';
 import { BridgeNetworkError, BridgePermissionDeniedError } from './errors';
+import { createUserHandlers } from './handlers/user';
 import type { BridgeHandlerRegistry } from './types';
 
 function makeManifest(permissions: OpenMiniManifest['permissions']): OpenMiniManifest {
@@ -506,5 +507,90 @@ describe('createBridgeDispatcher', () => {
 
       expect(destroy).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+/**
+ * Phase 12 W3, invariant 4. Verification and permission are two independent
+ * gates, and neither substitutes for the other.
+ *
+ * These go through the real dispatcher rather than calling the handler,
+ * because the permission gate lives in the dispatcher and the point is that
+ * it still fires first. A handler-level test could not tell "denied" from
+ * "handed nulls" — which is exactly the confusion being guarded against.
+ */
+describe('user identity is gated twice, independently', () => {
+  const HOST_PROFILE = { id: 'u_1138', displayName: 'Ada' };
+  const verifiedProvenance: PackageProvenance = {
+    baseUrl: 'https://cdn.example.com/apps/demo/',
+    identity: { verified: true, id: 'com.openmini.test', keyId: 'KEY-A' },
+  };
+
+  function dispatchGetProfile(options: {
+    permissions: OpenMiniManifest['permissions'];
+    provenance?: PackageProvenance;
+  }) {
+    const { sandbox } = createFakeSandbox();
+    const channel = new MessageChannel();
+    const received = collectResponses(channel.port2);
+
+    createBridgeDispatcher({
+      manifest: makeManifest(options.permissions),
+      sandbox,
+      port: channel.port1,
+      provenance: options.provenance,
+      handlers: { user: createUserHandlers({ profile: HOST_PROFILE }) },
+    });
+    channel.port2.postMessage(request({ method: 'user.getProfile', params: undefined }));
+    return received;
+  }
+
+  it('refuses a verified package that never asked for the user permission', async () => {
+    // Being verified is not being permitted. The dispatcher denies before
+    // the handler runs, so the package is refused rather than quietly
+    // handed an anonymous profile -- those are different answers and the
+    // Mini App is entitled to tell them apart.
+    const received = dispatchGetProfile({
+      permissions: ['storage'],
+      provenance: verifiedProvenance,
+    });
+    await tick(2);
+
+    expect(received[0]).toMatchObject({ ok: false, error: { code: 'PERMISSION_DENIED' } });
+  });
+
+  it('hands the profile over when both gates pass', async () => {
+    const received = dispatchGetProfile({
+      permissions: ['user'],
+      provenance: verifiedProvenance,
+    });
+    await tick(2);
+
+    expect(received[0]).toMatchObject({ ok: true, result: HOST_PROFILE });
+  });
+
+  it('permits but withholds for an unverified package that did ask', async () => {
+    // The other half of independence: the permission gate passes, and the
+    // package still learns nothing. A success carrying nulls, not a denial.
+    const received = dispatchGetProfile({
+      permissions: ['user'],
+      provenance: {
+        baseUrl: 'https://cdn.example.com/apps/demo/',
+        identity: { verified: false, reason: 'untrusted-key' },
+      },
+    });
+    await tick(2);
+
+    expect(received[0]).toMatchObject({
+      ok: true,
+      result: { id: null, displayName: null },
+    });
+  });
+
+  it('withholds for a sandbox with no package load at all', async () => {
+    const received = dispatchGetProfile({ permissions: ['user'] });
+    await tick(2);
+
+    expect(received[0]).toMatchObject({ ok: true, result: { id: null, displayName: null } });
   });
 });

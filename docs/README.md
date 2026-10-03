@@ -14,6 +14,8 @@ Phase records (history, not living documentation):
 - [Phase 9 — package integrity and identity](plans/phase-9.md)
 - [Phase 10 — verified identity as a storage boundary](plans/phase-10.md)
 - [Phase 11 — trust lifecycle: operator-owned trust configuration, revocation and rotation](plans/phase-11.md)
+- [Phase 12 — session-scoped user identity](plans/phase-12.md)
+  — approved plan, in progress
 
 This directory will grow to hold the rest of OpenMini's developer documentation
 (architecture, SDK reference) as those pieces are built in later phases.

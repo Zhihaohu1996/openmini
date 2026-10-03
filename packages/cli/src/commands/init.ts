@@ -101,9 +101,8 @@ async function main(): Promise<void> {
   // connectOpenMini rejects with a HANDSHAKE_TIMEOUT BridgeError if the host
   // never completes the handshake. Handle it: an app that ignores the
   // rejection just sits on "starting..." with no bridge and no explanation.
-  let openmini;
   try {
-    openmini = await connectOpenMini();
+    await connectOpenMini();
   } catch (error) {
     if (status) {
       status.textContent = \`could not reach the host: \${(error as Error).message}\`;
@@ -111,17 +110,28 @@ async function main(): Promise<void> {
     return;
   }
 
-  const profile = await openmini.user.getProfile();
   if (status) {
-    status.textContent = \`connected (user: \${profile.id ?? 'anonymous'})\`;
+    status.textContent = 'connected';
   }
+
+  // This app declares no permissions, so it may call no capability yet.
+  // Each of storage, navigation, user and network is gated by the
+  // "permissions" array in openmini.json, and the host refuses a call to a
+  // namespace you did not declare. To use storage, for example:
+  //
+  //   1. add "storage" to "permissions" in openmini.json
+  //   2. const { storage } = await connectOpenMini();
+  //      await storage.set("greeting", "hello");
+  //
+  // Declare a capability when you use it, not before: openmini.json is
+  // what a host operator reads to decide whether to run this app at all.
 }
 
 void main();
 `;
 
   // The entry script imports @openmini/sdk, so the scaffold declares it —
-  // otherwise the first `openmini build` fails on an unresolved import.
+  // otherwise the first "openmini build" fails on an unresolved import.
   const packageJson = `${JSON.stringify(
     {
       name: name.toLowerCase().replace(/[^a-z0-9-]+/g, '-'),

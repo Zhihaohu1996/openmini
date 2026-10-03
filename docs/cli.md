@@ -59,6 +59,18 @@ manager's install before building.
 `--id` is validated with the same rules `openmini validate` applies, before
 anything is written, so `init` output always passes `validate`.
 
+**The scaffold declares no permissions, and calls no capability.** Those two
+facts go together: every bridge namespace — `storage`, `navigation`,
+`user`, `network` — is gated by the `permissions` array, and the host
+refuses a call to one the manifest did not declare. A scaffold that asked for
+a capability by default would be a boundary whose default is "on"; a scaffold
+that called one it had not declared would fail on its first run. So the
+starter app connects, reports that it connected, and stops there, with a
+comment showing the two steps for adding a capability when you need one.
+
+A test pins the agreement rather than the exact text: every `openmini.<ns>`
+call site in the generated script must appear in the generated manifest.
+
 **Without `--force`, a conflict leaves the directory byte-for-byte
 unchanged.** All four destinations (`openmini.json`, `package.json`,
 `src/index.html`, `src/main.ts`) are checked before any of them is created;

@@ -690,3 +690,96 @@ describe('trustStoreFromConfig', () => {
     expect(Object.keys(store).sort()).toEqual(['__proto__', 'constructor']);
   });
 });
+
+// Phase 13 W3. `verifyPackage` is exported and takes any string as
+// `manifestId`; only `loadMiniAppFromUrl`'s manifest validation keeps these
+// names out, and this function does not rely on it. The house style is the
+// prototype-key test in `trustStoreFromConfig` above, and
+// `fetchResourceProvider.test.ts`'s "the digest table cannot reach
+// Object.prototype".
+describe('the trust store cannot reach Object.prototype', () => {
+  const INHERITED = ['constructor', 'toString', 'hasOwnProperty', 'valueOf', '__proto__'];
+
+  // A plain literal, as a host assembling a `PackageTrustStore` by hand
+  // would write it. It registers nothing at all.
+  const verifyAs = (manifestId: string, signatureText: string | undefined) =>
+    verifyPackage({
+      baseUrl: BASE_URL,
+      manifestId,
+      manifestVersion: APP_VERSION,
+      manifestBytes: MANIFEST_BYTES,
+      signatureText,
+      trustStore: {},
+    });
+
+  it.each(INHERITED)(
+    'returns an outcome, not a TypeError, for a signed package with id %j',
+    async (name) => {
+      // Without the gate the inherited member reads as a key list, and
+      // `.map()` on it throws out of a function documented to return an
+      // outcome. Unregistered and signed by a key nobody trusts, so it loads
+      // unverified.
+      await expect(verifyAs(name, await signature(publisher, { id: name }))).resolves.toEqual({
+        ok: true,
+        digests: expect.anything(),
+        provenance: { baseUrl: BASE_URL, identity: { verified: false, reason: 'untrusted-key' } },
+      });
+    },
+  );
+
+  it.each(INHERITED)(
+    'does not treat an unsigned package with id %j as registered',
+    async (name) => {
+      // Without the gate this is refused as `unsigned-registered`: failing
+      // closed against an owner the host never named.
+      expect(await verifyAs(name, undefined)).toEqual({
+        ok: true,
+        provenance: { baseUrl: BASE_URL, identity: { verified: false, reason: 'unsigned' } },
+      });
+    },
+  );
+
+  describe('an id the store genuinely registers as __proto__', () => {
+    // Built through `trustStoreFromConfig` from raw JSON: in an object
+    // literal `__proto__:` sets the prototype instead of creating a key, so
+    // the fixture would silently register nothing. These two pass without
+    // the gate as well; they guard against over-refusal, not the hole.
+    function protoStore(): PackageTrustStore {
+      const parsed = parseTrustConfig(
+        `{"trustConfigVersion":1,"packages":{"__proto__":{"keys":[{"publicKey":"${bytesToBase64(
+          publisher.publicKeySpki,
+        )}","status":"active"}]}}}`,
+      );
+      if (!parsed.valid) throw new Error('fixture config did not validate');
+      return trustStoreFromConfig(parsed.config);
+    }
+
+    const verifyProto = (signatureText: string | undefined) =>
+      verifyPackage({
+        baseUrl: BASE_URL,
+        manifestId: '__proto__',
+        manifestVersion: APP_VERSION,
+        manifestBytes: MANIFEST_BYTES,
+        signatureText,
+        trustStore: protoStore(),
+      });
+
+    it('still fails closed for an unsigned package', async () => {
+      expect(await verifyProto(undefined)).toMatchObject({
+        ok: false,
+        code: 'unsigned-registered',
+      });
+    });
+
+    it('still verifies the registered key', async () => {
+      const result = await verifyProto(await signature(publisher, { id: '__proto__' }));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.provenance.identity).toEqual({
+        verified: true,
+        id: '__proto__',
+        keyId: publisher.keyId,
+      });
+    });
+  });
+});

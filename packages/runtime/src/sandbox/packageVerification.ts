@@ -189,7 +189,28 @@ export async function verifyPackage(
   input: VerifyPackageInput,
 ): Promise<PackageVerificationOutcome> {
   const { baseUrl, manifestId, manifestVersion, manifestBytes, signatureText, trustStore } = input;
-  const registeredKeys = trustStore?.[manifestId];
+  // Own properties only. A bare index lookup also reaches everything on
+  // `Object.prototype`, so an id such as `constructor` or `__proto__` would
+  // answer an inherited value and read as *registered* when the host never
+  // mentioned it: an unsigned package would be refused as if its id were
+  // claimed, and a signed one would reach `.map()` on a function and throw a
+  // `TypeError` out of a function whose contract is to return an outcome.
+  //
+  // This is the dispatcher's gate, minus half of it. There the registry
+  // holds callables, so `hasOwn` alone would admit an own non-function and
+  // `typeof` alone would admit an inherited one, and both checks are
+  // required. Here the values are key lists, so there is no callable to
+  // distinguish and `hasOwn` is the whole of it.
+  //
+  // Not reachable through `loadMiniAppFromUrl`, whose manifest validation
+  // has already required `ID_PATTERN` — a leading lowercase letter and a
+  // dot. It is reachable through this function, which is exported and takes
+  // any string, and `trustStoreFromConfig`'s null prototype does not cover a
+  // `PackageTrustStore` a host assembles by hand as a plain literal.
+  const registeredKeys =
+    trustStore !== undefined && Object.hasOwn(trustStore, manifestId)
+      ? trustStore[manifestId]
+      : undefined;
   const isRegistered = registeredKeys !== undefined;
 
   if (signatureText === undefined) {

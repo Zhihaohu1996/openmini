@@ -1,7 +1,8 @@
 # Phase 13 — guards that do not guard (completed)
 
-**Status: complete.** Approved on 2026-10-03 against base `da655fb`; delivered in five work
-items, W1–W5. CI on the W5 head is recorded in [CI](#ci) once it has run.
+**Status: closed.** Approved on 2026-10-03 against base `da655fb`; delivered in five work items,
+W1–W5, and merged to `main` at `9a28ad9` with
+[CI green](https://github.com/Zhihaohu1996/openmini/actions/runs/37244142201).
 
 This file is the approved plan. It is written _before_ implementation deliberately, so that the
 scope, ordering, invariants and exit criteria survive across sessions and do not have to be
@@ -235,7 +236,7 @@ Base: `da655fb` — Phase 12 close-out, CI recorded.
 | `eeb4631`     | W2   | `fix(runtime)`  | `Object.hasOwn` gate on the digest lookup in [fetchResourceProvider.ts](../../packages/runtime/src/sandbox/fetchResourceProvider.ts). A file the signature does not cover is refused before it is fetched, for every filename. |
 | `d348258`     | W3   | `fix(runtime)`  | `Object.hasOwn` gate on the trust-store lookup in [packageVerification.ts](../../packages/runtime/src/sandbox/packageVerification.ts). `verifyPackage` returns an outcome for any string `manifestId` instead of throwing. |
 | `dfa0eee`     | W4   | `test(runtime)` | [signatureCoverage.test.ts](../../packages/runtime/src/sandbox/signatureCoverage.test.ts): the coverage refusal over the real chain, with no digest table written by hand. **No production code.** |
-| _this commit_ | W5   | `docs`          | [integrity.md](../security/integrity.md) narrowed, the ledger carried forward, this file converted into the phase record. |
+| `9a28ad9`     | W5   | `docs`          | [integrity.md](../security/integrity.md) narrowed, the ledger carried forward, this file converted into the phase record. |
 
 Three separate fix commits, as planned. Nothing was cut: W3, first on the cut list, shipped.
 
@@ -345,17 +346,21 @@ did not happen. W4 added no production code, so the check stands for the final t
 
 ### CI
 
-Phase 13 reached `main` in three pushes so far, with W5 to follow. Every run is green on both
-jobs, each against the exact SHA pushed:
+Phase 13 reached `main` in four pushes, ending at `9a28ad9`. Every run is green on both jobs,
+each against the exact SHA pushed:
 
 | Push | Head | Run | `build` | `e2e` |
 | --- | --- | --- | --- | --- |
 | `da655fb..eeb4631` (plan, W1, W2) | `eeb4631` | [CI #20](https://github.com/Zhihaohu1996/openmini/actions/runs/37238851740) | success | success |
 | `eeb4631..d348258` (W3) | `d348258` | [CI #21](https://github.com/Zhihaohu1996/openmini/actions/runs/37240046639) | success | success |
 | `d348258..dfa0eee` (W4) | `dfa0eee` | [CI #22](https://github.com/Zhihaohu1996/openmini/actions/runs/37240641134) | success | success |
-| W5 | _this commit_ | _pending — recorded in a follow-up commit once it has run, as in Phase 12_ | | |
+| `dfa0eee..9a28ad9` (W5) | `9a28ad9` | [CI #23](https://github.com/Zhihaohu1996/openmini/actions/runs/37244142201) | success | success |
 
-The `build` job runs `pnpm format:check` and passed on all three, while it fails on the Windows
+The final head is `9a28ad9b31ce80f43d08e19fcb03ccdf05456591`. On CI #23, `build` ran lint →
+format:check → build → typecheck → test, and `e2e` ran `pnpm e2e` on Chromium; every step
+succeeded, against that exact SHA and not a later one.
+
+The `build` job runs `pnpm format:check` and passed on all four, while it fails on the Windows
 working tree. This confirms the CRLF diagnosis below from the other side, for the third phase
 running.
 

@@ -1,4 +1,4 @@
-# Package integrity and identity — Phase 9 (+ Phase 11 trust lifecycle, Phase 12 identity gating)
+# Package integrity and identity — Phase 9 (+ Phase 11 trust lifecycle, Phase 12 identity gating, Phase 13 own-property lookups)
 
 Phase 9 answers two questions a host could not previously ask about a Mini App package:
 
@@ -71,6 +71,13 @@ rejected. Its own bytes contain the signature, so its digest cannot be computed 
 signature omitting it would attest to the code while leaving what the code is *allowed to do*
 unsigned.
 
+**Every entry the payload lists is kept**, whatever its name. The parsed `files` map is built with
+no prototype, so a path such as `__proto__` or `constructor` is an ordinary entry, and a name the
+payload does *not* list reads as absent rather than as something inherited from
+`Object.prototype`. Before Phase 13 the map was a plain object, and an entry named `__proto__`
+was silently dropped from a signed statement. Such names are legal POSIX file names and are not
+blocklisted; see [Lookups read own properties only](#lookups-read-own-properties-only-phase-13).
+
 ### Algorithm
 
 ECDSA P-256 with SHA-256, as one non-negotiable string. There is no algorithm agility: a
@@ -100,6 +107,9 @@ and always prints the key.
 The trust store maps `manifest.id` → the keys allowed to sign it, each holding the complete
 base64 SPKI key material. An id present in it is **registered**: the host is asserting it knows
 who owns that id, and that assertion is the only thing that makes failing closed possible.
+"Present" means an own property of the store. An id that only exists on `Object.prototype` —
+`constructor`, `toString`, `__proto__` — is not registered, and `verifyPackage` returns an
+outcome for any string id rather than throwing.
 
 The order in
 [`packageVerification.ts`](../../packages/runtime/src/sandbox/packageVerification.ts):
@@ -268,8 +278,9 @@ to reach for.
 ### Digests are enforced on every read, not only at load
 
 `FetchResourceProvider` checks each resource's bytes against its signed digest, and **refuses a
-file the signature does not mention before fetching it**. Without that, an attacker adds a file
-rather than altering one and every digest still matches.
+file the signature does not mention before fetching it** — for every file name, including names
+that exist on `Object.prototype`. Without that, an attacker adds a file rather than altering one
+and every digest still matches.
 
 Enforcement applies to `untrusted-key` packages too: a package internally consistent with its own
 signature has content integrity even though it has no trusted identity.
@@ -277,6 +288,41 @@ signature has content integrity even though it has no trusted identity.
 Digests always cover the bytes that were *served*, never a re-encoding of decoded text — invalid
 UTF-8 decodes to U+FFFD, so distinct byte sequences share one string form. This is why
 `boundedFetch` grew an opt-in `captureBytes`.
+
+### Lookups read own properties only (Phase 13)
+
+A bare index into a plain object also reaches everything on `Object.prototype`, so a lookup for
+`constructor` answers a function instead of `undefined`. Each lookup that decides what a package
+is, or what it may fetch, reads own properties only:
+
+| Lookup | How | What an inherited name would otherwise have done |
+| --- | --- | --- |
+| The signed payload's `files` map ([integrity.ts](../../packages/shared/src/integrity.ts)) | built with `Object.create(null)` | an entry named `__proto__` silently dropped from a signed statement |
+| The provider's digest table ([fetchResourceProvider.ts](../../packages/runtime/src/sandbox/fetchResourceProvider.ts)) | `Object.hasOwn` gate | a file the signature never mentions **fetched** before being refused, and refused with the wrong reason |
+| The trust store ([packageVerification.ts](../../packages/runtime/src/sandbox/packageVerification.ts)) | `Object.hasOwn` gate | an id the host never named treated as registered, or a `TypeError` out of `verifyPackage` |
+
+These follow hardening that already existed elsewhere: the trust configuration's `packages` map
+and `trustStoreFromConfig` are built with null prototypes, and the bridge dispatcher and
+`capabilities.ts` gate their lookups with `Object.hasOwn`.
+
+**None of these was a signature bypass.** Before Phase 13 the digest comparison still failed
+closed whenever an inherited value reached it, so nothing was ever accepted that the signature
+did not cover. What the fixes restore is that a signed entry is never discarded, that an
+uncovered file is never *requested*, and that `verifyPackage` always returns an outcome.
+
+The two fixes on the resource path protect different inputs. On the normal load path,
+`verifyPackage` builds the digest table and hands it to the provider, and the table's null
+prototype alone keeps inherited names out. The provider's own gate is what protects a table a
+caller passes to `createFetchResourceProvider` directly, such as a plain object literal, and the
+provider does not rely on the verifier having built its table.
+
+**There is no name blocklist.** `__proto__` and `constructor` remain legal file names and legal
+manifest entries, and a package that honestly signs such a file loads. Fixing the lookup fixes it
+for every name; a blocklist fixes the names someone remembered.
+
+Not yet covered: `openmini verify` builds its map of on-disk digests as a plain object, so a
+signed path named `constructor` that is missing from disk is reported as `modified` instead of
+`missing`. Verification still fails; only the reason is wrong.
 
 ## Result shape
 

@@ -49,6 +49,36 @@ describe('exit codes', () => {
     expect(await run(['init', await tempDir('openmini-run-')])).toBe(1);
     expect(errors.join('\n')).toContain('--id');
   });
+
+  // Phase 14 W2. The command table was indexed with the typed name, so an
+  // `Object.prototype` member was found as if it were a command.
+  it.each(['constructor', '__proto__'])(
+    'exits 1 for %s --help instead of printing undefined and exiting 0',
+    async (command) => {
+      expect(await run([command, '--help'])).toBe(1);
+      expect(errors.join('\n')).toContain(`unknown command: ${command}`);
+      expect(logs.join('\n')).not.toContain('undefined');
+    },
+  );
+
+  it('exits 1 for constructor --force rather than throwing a TypeError', async () => {
+    expect(await run(['constructor', '--force'])).toBe(1);
+    expect(errors.join('\n')).toContain('unknown command: constructor');
+  });
+
+  it('exits 1 for toString x', async () => {
+    // Passed before the fix too, but only because the dispatch `switch` has
+    // a default that caught the inherited "spec" by accident. Kept so that
+    // accident is no longer what this depends on.
+    expect(await run(['toString', 'x'])).toBe(1);
+    expect(errors.join('\n')).toContain('unknown command: toString');
+  });
+
+  it('still prints usage and exits 0 for a real command with --help', async () => {
+    expect(await run(['build', '--help'])).toBe(0);
+    expect(logs.join('\n')).toContain('openmini build');
+    expect(errors).toEqual([]);
+  });
 });
 
 // R8 (Phase 8.5). `run`'s docstring promised these exit codes; three of the

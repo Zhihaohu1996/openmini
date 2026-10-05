@@ -263,7 +263,15 @@ export async function run(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const spec = COMMAND_SPECS[command];
+  // Own properties only. A bare index answered an `Object.prototype` member
+  // for a typed name: `constructor` found the `Object` function, which is
+  // truthy, so `constructor --help` printed its `usage` — undefined — and
+  // exited 0, and `constructor --force` threw a TypeError on its missing
+  // `booleanFlags` instead of reporting an unknown command. The
+  // values are plain spec objects, so `hasOwn` is the whole of it.
+  // `SHORT_ALIASES` is left as it is: an inherited value never matches a
+  // flag list, so a prototype-named flag already fails as unknown.
+  const spec = Object.hasOwn(COMMAND_SPECS, command) ? COMMAND_SPECS[command] : undefined;
   if (!spec) {
     console.error(`unknown command: ${command}\n\n${USAGE}`);
     return 1;

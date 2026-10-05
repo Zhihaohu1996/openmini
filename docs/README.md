@@ -18,6 +18,7 @@ Phase records (history, not living documentation):
 - [Phase 11 — trust lifecycle: operator-owned trust configuration, revocation and rotation](plans/phase-11.md)
 - [Phase 12 — session-scoped user identity](plans/phase-12.md)
 - [Phase 13 — guards that do not guard: own-property lookups in the signature path](plans/phase-13.md)
+- [Phase 14 — the signing side of the own-property guard](plans/phase-14.md)
 
 This directory will grow to hold the rest of OpenMini's developer documentation
 (architecture, SDK reference) as those pieces are built in later phases.

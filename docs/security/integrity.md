@@ -320,9 +320,30 @@ provider does not rely on the verifier having built its table.
 manifest entries, and a package that honestly signs such a file loads. Fixing the lookup fixes it
 for every name; a blocklist fixes the names someone remembered.
 
-Not yet covered: `openmini verify` builds its map of on-disk digests as a plain object, so a
-signed path named `constructor` that is missing from disk is reported as `modified` instead of
-`missing`. Verification still fails; only the reason is wrong.
+**The CLI side (Phase 14).** `openmini sign` and `openmini verify` digest a package's files
+through one function, [`digestPackageFiles`](../../packages/cli/src/packageFiles.ts), whose map
+is now built with `Object.create(null)` like the payload parser's. Phase 13 recorded only the
+mildest consequence of it being a plain object, a wrong reason in a failing report. The full
+effect was larger:
+
+- `sign` silently left a package-root file named `__proto__` out of the signature;
+- `verify` reported a package with a root `__proto__` file **added after signing** as
+  `verified`, exit 0, so the audit tool vouched for a file the signature does not cover;
+- `verify` reported a signed `constructor` that was deleted from disk as `modified` instead of
+  `missing`.
+
+All three now behave as for any other name. The second was false assurance from the CLI, **not a
+runtime bypass**: since Phase 13 the runtime refuses to fetch any file the signed payload does
+not list, for every file name, and a host loading that package never served the file.
+
+The same phase gave the `openmini` command lookup an `Object.hasOwn` gate, so a command named
+`constructor` or `__proto__` is unknown and exits 1. `StaticFixtureResourceProvider.readText`
+got the same gate and now rejects every path its own map does not hold. That provider serves
+only host-authored fixtures, so no package or signature reaches it.
+
+Still open: the bridge network handler copies a Mini App's request headers into a plain object,
+so a header named `__proto__` is dropped rather than sent. It fails toward sending less, and
+nothing signed passes through it.
 
 ## Result shape
 

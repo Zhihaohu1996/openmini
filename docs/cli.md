@@ -261,6 +261,16 @@ separately, because the remedies differ:
 | `signature is authentic, but the package does not match it` | The package was modified after signing. Lists each file as `modified`, `missing`, or `unsigned` (present but not covered). |
 | `verified` | Every covered file matches, and every file present is covered. |
 
+This holds for **every file name**. Before Phase 14 the on-disk digest map
+that `sign` and `verify` share was a plain object, and names on
+`Object.prototype` slipped through it. A root file named `__proto__` was left
+out of a signature without a word. One added after signing was not reported
+at all: `verify` said `verified` and exited 0. A signed `constructor` deleted
+from disk read `modified` instead of `missing`. Each is now reported like any
+other file, and `__proto__` and `constructor` are ordinary, legal file names
+that `sign` covers. None of this ever let the runtime load an uncovered file;
+it refuses those for every name.
+
 **`verify` does not decide trust, and says so in its output.** A package
 signed with an attacker's own key verifies here exactly as a legitimate one
 does — only a host's trust store can reject that, so the `keyId` and public

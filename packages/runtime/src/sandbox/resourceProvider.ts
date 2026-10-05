@@ -21,7 +21,13 @@ export class StaticFixtureResourceProvider implements MiniAppResourceProvider {
     }
 
     const key = containment.segments.join('/');
-    const content = this.files[key];
+    // Own properties only. This class is exported and its contract is
+    // `Promise<string>`, rejecting for a path not in its map, but a bare index
+    // answered an `Object.prototype` member for a prototype-named path:
+    // `constructor` resolved with the `Object` function and `__proto__` with
+    // `Object.prototype`, and `resolveEntryDocument` passed either on as the
+    // entry's html. The map holds strings, so `hasOwn` is the whole of it.
+    const content = Object.hasOwn(this.files, key) ? this.files[key] : undefined;
     if (content === undefined) {
       throw new Error(`resource not found in fixture: ${relativePath}`);
     }

@@ -221,6 +221,26 @@ describe('the built binary', () => {
       expect(result.stderr).toContain('modified: index.html');
     });
 
+    it('exits 1 when a file named __proto__ is added after signing', async () => {
+      // Phase 14 W1, proved where the user meets it. Before the fix the
+      // shipped binary printed "verified" and exited 0 for this package: the
+      // added file never entered verify's on-disk digest map, so nothing
+      // reported it as uncovered. The runtime never loaded it either way —
+      // this is the audit tool's answer, and it must not be "verified".
+      const dir = await makeProject();
+      const keyFile = join(await mkdtemp(join(tmpdir(), 'openmini-bin-key-')), 'k.json');
+      expect(runCli(['keygen', '--out', keyFile]).status).toBe(0);
+      expect(runCli(['build', dir]).status).toBe(0);
+      expect(runCli(['sign', join(dir, 'dist'), '--key', keyFile]).status).toBe(0);
+
+      await writeFile(join(dir, 'dist', '__proto__'), 'not covered by the signature', 'utf8');
+
+      const result = runCli(['verify', join(dir, 'dist')]);
+      expect(result.status).toBe(1);
+      expect(result.stdout).not.toContain('verified');
+      expect(result.stderr).toContain('unsigned: __proto__');
+    });
+
     it('exits 1 when signing without --key', async () => {
       const dir = await makeProject();
       const result = runCli(['sign', dir]);

@@ -1,4 +1,5 @@
 import { SIGNATURE_FILENAME, parseSignatureEnvelope, verifySignatureFile } from '@openmini/shared';
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -149,6 +150,32 @@ describe('signPackage', () => {
       /unsupported key file version/,
     );
   });
+
+  it('covers a package-root file named __proto__ instead of silently leaving it out', async () => {
+    // Phase 14 W1. On a plain-object digest map this assignment reached the
+    // inherited `__proto__` setter and the entry was never created: the
+    // signer reported 2 files with 3 on disk, and the payload did not cover
+    // the third. `__proto__` is a legal file name, so it must be covered.
+    const dir = await makePackage();
+    const bytes = Buffer.from('a file honestly named __proto__', 'utf8');
+    await writeFile(join(dir, '__proto__'), bytes);
+    const keyFile = await makeKey();
+
+    const result = await signPackage({ packageDir: dir, keyFile });
+    expect(result.fileCount).toBe(3);
+
+    const verified = await verifySignatureFile(
+      await readFile(join(dir, SIGNATURE_FILENAME), 'utf8'),
+    );
+    expect(verified.ok).toBe(true);
+    if (!verified.ok) return;
+    // Own property, asserted with `hasOwn`: an index or `toHaveProperty`
+    // would be satisfied by the inherited member and prove nothing.
+    expect(Object.hasOwn(verified.payload.files, '__proto__')).toBe(true);
+    expect(verified.payload.files['__proto__']).toBe(
+      `sha256-${createHash('sha256').update(bytes).digest('base64')}`,
+    );
+  });
 });
 
 describe('verifyPackage', () => {
@@ -224,6 +251,52 @@ describe('verifyPackage', () => {
     expect(result.ok).toBe(true);
     expect(result.report).toMatch(/does NOT say the/);
     expect(result.publicKey).toBeTruthy();
+  });
+
+  // Phase 14 W1. `verify` digests the disk through the same function `sign`
+  // does, so the plain-object map hid files from it too. Each case below
+  // has an ordinary-name twin above; these are the prototype names.
+  describe('prototype-named files', () => {
+    it('verifies an honest package containing a file named __proto__', async () => {
+      // The positive control: covering the file must not make it refused.
+      const dir = await makePackage();
+      await writeFile(join(dir, '__proto__'), 'honest', 'utf8');
+      const keyFile = await makeKey();
+      await signPackage({ packageDir: dir, keyFile });
+
+      const result = await verifyPackage(dir);
+      expect(result.ok).toBe(true);
+      expect(result.report).toMatch(/verified \(com\.example\.signed 1\.2\.3, 3 files\)/);
+    });
+
+    it('detects a file named __proto__ added after signing', async () => {
+      // Previously reported as verified: the file never entered the on-disk
+      // map, so the "present but not covered" walk never saw it.
+      const dir = await makePackage();
+      const keyFile = await makeKey();
+      await signPackage({ packageDir: dir, keyFile });
+      await writeFile(join(dir, '__proto__'), 'alert(1)', 'utf8');
+
+      const result = await verifyPackage(dir);
+      expect(result.ok).toBe(false);
+      expect(result.report).toMatch(/unsigned: __proto__ \(present in the package/);
+    });
+
+    it('reports a signed file named constructor, deleted after signing, as missing', async () => {
+      // Previously `modified`: the absent name answered the inherited
+      // `Object` function instead of undefined. Still a failure either way;
+      // this is about telling the operator the true reason.
+      const dir = await makePackage();
+      await writeFile(join(dir, 'constructor'), 'here', 'utf8');
+      const keyFile = await makeKey();
+      await signPackage({ packageDir: dir, keyFile });
+      await rm(join(dir, 'constructor'));
+
+      const result = await verifyPackage(dir);
+      expect(result.ok).toBe(false);
+      expect(result.report).toMatch(/missing: constructor \(listed in the signature/);
+      expect(result.report).not.toMatch(/modified: constructor/);
+    });
   });
 });
 

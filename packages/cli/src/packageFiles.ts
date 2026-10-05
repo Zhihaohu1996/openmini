@@ -105,7 +105,17 @@ export async function digestPackageFiles(packageDir: string): Promise<PackageFil
     throw new PackageFilesError(`no files to sign in ${packageDir}`);
   }
 
-  const digests: PackageFileDigests = {};
+  // No prototype, so every walked path becomes an own entry. On a plain `{}`
+  // a root file named `__proto__` reaches the inherited setter, which ignores
+  // a string: the entry is never created, `sign` leaves the file out of the
+  // signature without saying so, and `verify` — which digests the disk
+  // through this same function — never sees it, so a `__proto__` file added
+  // after signing passed as verified. An absent name such as `constructor`
+  // also answered an inherited function, so `verify` reported a deleted file
+  // as `modified` instead of `missing`. One map, so one fix for both
+  // consumers. The type is unchanged; nothing calls a method on the map.
+  // Same call, and same reason, as the payload parser in @openmini/shared.
+  const digests: PackageFileDigests = Object.create(null) as PackageFileDigests;
   for (const rel of paths) {
     // Read as bytes, never as text. A digest over a decoded string would be
     // a digest of something the file does not contain: invalid UTF-8 decodes

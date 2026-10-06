@@ -1,9 +1,20 @@
 import { SIGNATURE_FILENAME, parseSignatureEnvelope, verifySignatureFile } from '@openmini/shared';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  lstat,
+  mkdtemp,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { generateKeyFile } from './keygen';
 import { signPackage } from './sign';
 import { verifyPackage } from './verify';
@@ -323,5 +334,86 @@ describe('generateKeyFile', () => {
     const onDisk = JSON.parse(await readFile(out, 'utf8'));
     expect(onDisk.keyId).toBe(result.keyId);
     expect(onDisk.publicKey).toBe(result.publicKey);
+  });
+
+  // File modes and symlinks are POSIX behaviour: on Windows Node ignores the
+  // mode and creating a symlink needs a privilege, so these two run in Linux
+  // CI and not locally. The failed-write case below needs neither and runs
+  // everywhere.
+  const posixOnly = process.platform !== 'win32';
+
+  it.runIf(posixOnly)('writes 0600 with --force, even over an existing 0644 file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'openmini-key-'));
+    const out = join(dir, 'k.json');
+    await writeFile(out, 'old\n', 'utf8');
+    await chmod(out, 0o644);
+
+    await generateKeyFile({ out, force: true });
+
+    expect((await stat(out)).mode & 0o777).toBe(0o600);
+  });
+
+  it.runIf(posixOnly)(
+    'replaces a symlink at the path with --force instead of writing through it',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'openmini-key-'));
+      const elsewhere = join(dir, 'elsewhere.txt');
+      await writeFile(elsewhere, 'not a key\n', 'utf8');
+      const out = join(dir, 'k.json');
+      await symlink(elsewhere, out);
+
+      const result = await generateKeyFile({ out, force: true });
+
+      expect(await readFile(elsewhere, 'utf8')).toBe('not a key\n');
+      expect((await lstat(out)).isSymbolicLink()).toBe(false);
+      expect(JSON.parse(await readFile(out, 'utf8')).keyId).toBe(result.keyId);
+    },
+  );
+
+  it('keeps the old key intact when a --force write fails, and leaves no temp file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'openmini-key-'));
+    const out = join(dir, 'k.json');
+    await generateKeyFile({ out });
+    const before = await readFile(out);
+
+    // The open succeeds and the write does not — what a full disk does. The
+    // fake creates the file it was asked to (with the caller's flag, so a
+    // `w` open truncates) and then fails, so the test observes whatever the
+    // file it opened is left holding.
+    vi.resetModules();
+    vi.doMock('node:fs/promises', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('node:fs/promises')>();
+      return {
+        ...actual,
+        writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
+          await actual.writeFile(args[0], '', args[2]);
+          throw Object.assign(new Error('simulated write failure'), { code: 'EIO' });
+        },
+      };
+    });
+    try {
+      const { generateKeyFile: generateWithFailingWrite } = await import('./keygen');
+      await expect(generateWithFailingWrite({ out, force: true })).rejects.toThrow(
+        /simulated write failure/,
+      );
+    } finally {
+      vi.doUnmock('node:fs/promises');
+      vi.resetModules();
+    }
+
+    expect(await readFile(out)).toEqual(before);
+    expect(await readdir(dir)).toEqual(['k.json']);
+  });
+
+  it('writes a key that signs and verifies after --force replaces an existing one', async () => {
+    const pkg = await makePackage();
+    const dir = await mkdtemp(join(tmpdir(), 'openmini-key-'));
+    const keyFile = join(dir, 'k.json');
+    await generateKeyFile({ out: keyFile });
+    const replaced = await generateKeyFile({ out: keyFile, force: true });
+
+    const signed = await signPackage({ packageDir: pkg, keyFile });
+    expect(signed.keyId).toBe(replaced.keyId);
+    expect((await verifyPackage(pkg)).ok).toBe(true);
   });
 });

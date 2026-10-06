@@ -1,5 +1,5 @@
 import { bytesToBase64, generateSigningKeyPair, INTEGRITY_ALGORITHM } from '@openmini/shared';
-import { writeFile } from 'node:fs/promises';
+import { rename, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 /**
@@ -59,14 +59,21 @@ export async function generateKeyFile(options: KeygenOptions): Promise<KeygenRes
     publicKey: bytesToBase64(pair.publicKeySpki),
   };
 
+  const serialized = `${JSON.stringify(contents, null, 2)}\n`;
+
+  if (options.force) {
+    await replaceKeyFile(keyFile, serialized);
+    return { keyFile, keyId: pair.keyId, publicKey: contents.publicKey };
+  }
+
   try {
-    await writeFile(keyFile, `${JSON.stringify(contents, null, 2)}\n`, {
+    await writeFile(keyFile, serialized, {
       encoding: 'utf8',
       // `wx` fails if the path exists, so refusing to overwrite is enforced
       // by the open itself rather than by a check-then-write that another
       // process could slip between. Mode 0600 is applied at creation, not
       // afterwards, so the key is never briefly world-readable.
-      flag: options.force ? 'w' : 'wx',
+      flag: 'wx',
       mode: 0o600,
     });
   } catch (error) {
@@ -83,4 +90,34 @@ export async function generateKeyFile(options: KeygenOptions): Promise<KeygenRes
   }
 
   return { keyFile, keyId: pair.keyId, publicKey: contents.publicKey };
+}
+
+/**
+ * `--force`: writes the new key beside the old one, then renames it into place.
+ *
+ * Opening the target itself with `w` would give up both of the exclusive
+ * create's protections. `mode` applies only when a file is created, so an
+ * existing 0644 file would stay 0644 with the new private key in it; and `w`
+ * follows a symlink at the path, writing the key wherever the link points.
+ * It also truncates first, so a write that fails part-way loses the old key
+ * with no new one to replace it.
+ *
+ * A fresh exclusive create gets the mode right from the start, and `rename`
+ * replaces whatever is at the path — a symlink included — rather than writing
+ * through it, so the old key stays intact until the new one is complete. The
+ * temp file sits in the target's own directory, so the rename never crosses a
+ * filesystem. A process killed between the write and the rename leaves the
+ * temp file behind; it is 0600 like any key file, and its random name means
+ * it never collides with the next attempt.
+ */
+async function replaceKeyFile(keyFile: string, serialized: string): Promise<void> {
+  const temp = `${keyFile}.${crypto.randomUUID()}.tmp`;
+  try {
+    await writeFile(temp, serialized, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    await rename(temp, keyFile);
+  } catch (error) {
+    // Best effort, so the error reported is the one that caused the failure.
+    await rm(temp, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }

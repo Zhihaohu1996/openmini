@@ -1,7 +1,8 @@
 # Phase 14 — the signing side of the own-property guard (completed)
 
-**Status: complete.** Approved on 2026-10-04 against base `f1f1abf`; delivered in four work
-items, W1–W4. CI on the W4 head is recorded in [CI](#ci) once it has run.
+**Status: closed.** Approved on 2026-10-04 against base `f1f1abf`; delivered in four work items,
+W1–W4, and merged to `main` at `cdd2f35` with
+[CI green](https://github.com/Zhihaohu1996/openmini/actions/runs/37375584703).
 
 This file is the plan. It is written _before_ implementation deliberately, so that the scope,
 ordering, invariants and exit criteria survive across sessions and do not have to be
@@ -475,7 +476,7 @@ Base: `f1f1abf` — Phase 13 close-out, CI recorded.
 | `bebaa09`     | W1   | `fix(cli)`     | The `digestPackageFiles` map in [packageFiles.ts](../../packages/cli/src/packageFiles.ts) is built with `Object.create(null)`. `sign` covers a root file named `__proto__`; `verify` reports one added after signing as `unsigned`, and a deleted `constructor` as `missing`. Closes items 1, 2 and 3. |
 | `1388682`     | W2   | `fix(cli)`     | `Object.hasOwn` gate on the `COMMAND_SPECS` lookup in [run.ts](../../packages/cli/src/run.ts). Every `Object.prototype` name typed as a command reports `unknown command` and exits 1. Closes item 4. |
 | `55ac3d9`     | W3   | `fix(runtime)` | `Object.hasOwn` gate in `StaticFixtureResourceProvider.readText` ([resourceProvider.ts](../../packages/runtime/src/sandbox/resourceProvider.ts)). It resolves only with a string from its own map. Closes item 5. |
-| _this commit_ | W4   | `docs`         | [integrity.md](../security/integrity.md) and [cli.md](../cli.md) corrected, the manual CLI check run and recorded, the ledger carried forward, this file converted into the phase record. |
+| `cdd2f35`     | W4   | `docs`         | [integrity.md](../security/integrity.md) and [cli.md](../cli.md) corrected, the manual CLI check run and recorded, the ledger carried forward, this file converted into the phase record. |
 
 Three separate fix commits, as planned. Nothing was cut: W3 and W2, both on the cut list,
 shipped.
@@ -617,9 +618,9 @@ not happen. `pnpm dev` was not needed, as the plan said: W3's only host caller i
 
 ### CI
 
-Phase 14 has reached `main` in four pushes so far, with W4 to follow. Every run is green on both
-jobs, each against the exact SHA pushed. On each, `build` ran lint → format:check → build →
-typecheck → test and `e2e` ran `pnpm e2e` on Chromium, and every step succeeded:
+Phase 14 reached `main` in five pushes, ending at `cdd2f35`. Every run is green on both jobs,
+each against the exact SHA pushed. On each, `build` ran lint → format:check → build → typecheck →
+test and `e2e` ran `pnpm e2e` on Chromium, and every step succeeded:
 
 | Push | Head | Run | `build` | `e2e` |
 | --- | --- | --- | --- | --- |
@@ -627,14 +628,15 @@ typecheck → test and `e2e` ran `pnpm e2e` on Chromium, and every step succeede
 | `c2339fe..bebaa09` (W1) | `bebaa09` | [CI #26](https://github.com/Zhihaohu1996/openmini/actions/runs/37264326771) | success | success |
 | `bebaa09..1388682` (W2) | `1388682` | [CI #27](https://github.com/Zhihaohu1996/openmini/actions/runs/37265316856) | success | success |
 | `1388682..55ac3d9` (W3) | `55ac3d9` | [CI #28](https://github.com/Zhihaohu1996/openmini/actions/runs/37369282482) | success | success |
-| W4 | _this commit_ | _pending — recorded in the CI-record follow-up once it has run, per the [Close-out sequence](#close-out-sequence)_ | | |
+| `55ac3d9..cdd2f35` (W4) | `cdd2f35` | [CI #29](https://github.com/Zhihaohu1996/openmini/actions/runs/37375584703) | success | success |
 
 Full SHAs: `c2339fec1d1362dcc8c7842c1bcbcb37fe9b71eb`,
 `bebaa094aed08a95e6e2beedbec54bbd55feb572`, `1388682dbeed96a1ccd184b84f76eb028447ad42`,
-`55ac3d91abd6d7d4c880087899c9b6156965bb8d`. Each run's `head_sha`, and each of its jobs', was
-read from the GitHub Actions API and matches the commit it is listed against.
+`55ac3d91abd6d7d4c880087899c9b6156965bb8d`, `cdd2f3574941c54a85e86dca0a0d3aa4b286281c`. Each
+run's `head_sha`, and each of its jobs', was read from the GitHub Actions API and matches the
+commit it is listed against. CI #29, on the final head, is the only run for that SHA.
 
-The `build` job runs `pnpm format:check` and passed on all four, while it fails on the Windows
+The `build` job runs `pnpm format:check` and passed on all five, while it fails on the Windows
 working tree. This confirms the CRLF diagnosis below from the other side, for the fourth phase
 running.
 

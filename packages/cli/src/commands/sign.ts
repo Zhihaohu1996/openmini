@@ -7,6 +7,7 @@ import {
   serializeSignatureEnvelope,
   signIntegrityPayload,
   SIGNATURE_FILENAME,
+  verifySignatureEnvelope,
 } from '@openmini/shared';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -173,6 +174,18 @@ export async function signPackage(options: SignOptions): Promise<SignResult> {
     privateKey,
     spki,
   );
+
+  // The signature is made with the key file's privateKey and the envelope
+  // carries its publicKey, so a file whose two halves are not one pair still
+  // signs, and the result is a signature every verifier refuses. Checked here
+  // with the verifier `verify` uses, against the file's own publicKey, before
+  // anything is written.
+  const selfCheck = await verifySignatureEnvelope(envelope);
+  if (!selfCheck.ok) {
+    throw new SignError(
+      `privateKey and publicKey in ${keyFile} do not match (${selfCheck.reason}); no signature was written.`,
+    );
+  }
 
   const signatureFile = join(packageDir, SIGNATURE_FILENAME);
   await writeFile(signatureFile, serializeSignatureEnvelope(envelope), 'utf8');

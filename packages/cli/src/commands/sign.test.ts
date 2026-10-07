@@ -368,6 +368,36 @@ describe('signPackage key location', () => {
   });
 });
 
+describe('signPackage key pair', () => {
+  // Phase 15 W3. The signature is made with the key file's privateKey and the
+  // envelope carries its publicKey, so a file whose halves came from two
+  // different pairs used to sign with no error and write a signature that
+  // every verifier refuses.
+  it('refuses a key file whose publicKey belongs to another pair, writing nothing', async () => {
+    const dir = await makePackage();
+    const keyFile = await makeKey();
+    const other = JSON.parse(await readFile(await makeKey(), 'utf8'));
+    const key = JSON.parse(await readFile(keyFile, 'utf8'));
+    await writeFile(keyFile, JSON.stringify({ ...key, publicKey: other.publicKey }), 'utf8');
+
+    await expect(signPackage({ packageDir: dir, keyFile })).rejects.toThrow(
+      /privateKey and publicKey in .* do not match/,
+    );
+    expect((await readdir(dir)).sort()).toEqual(['index.html', 'openmini.json']);
+  });
+
+  it('signs with a matching pair, which verifies', async () => {
+    const dir = await makePackage();
+    const keyFile = await makeKey();
+
+    const result = await signPackage({ packageDir: dir, keyFile });
+    const verified = await verifyPackage(dir);
+    expect(verified.ok).toBe(true);
+    expect(verified.publicKey).toBe(JSON.parse(await readFile(keyFile, 'utf8')).publicKey);
+    expect(result.fileCount).toBe(2);
+  });
+});
+
 describe('generateKeyFile', () => {
   it('refuses to overwrite an existing key file without --force', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'openmini-key-'));

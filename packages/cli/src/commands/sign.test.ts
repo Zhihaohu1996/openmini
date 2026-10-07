@@ -312,6 +312,62 @@ describe('verifyPackage', () => {
   });
 });
 
+describe('signPackage key location', () => {
+  // Phase 15 W2. The package walk covers every file under the package
+  // directory, so a key kept there used to be signed into the package and
+  // shipped with it, and `verify` then reported it as covered.
+  const refusal = /key file is inside the package directory/;
+
+  it('refuses a key file at the package root, before writing a signature', async () => {
+    const dir = await makePackage();
+    const keyFile = join(dir, 'signing.key.json');
+    await generateKeyFile({ out: keyFile });
+
+    await expect(signPackage({ packageDir: dir, keyFile })).rejects.toThrow(refusal);
+    expect((await readdir(dir)).sort()).toEqual([
+      'index.html',
+      'openmini.json',
+      'signing.key.json',
+    ]);
+  });
+
+  it('refuses a key file in a nested directory of the package', async () => {
+    const dir = await makePackage();
+    await mkdir(join(dir, 'keys'));
+    const keyFile = join(dir, 'keys', 'signing.key.json');
+    await generateKeyFile({ out: keyFile });
+
+    await expect(signPackage({ packageDir: dir, keyFile })).rejects.toThrow(refusal);
+    expect((await readdir(dir)).sort()).toEqual(['index.html', 'keys', 'openmini.json']);
+  });
+
+  it('accepts a key in a sibling directory whose name merely starts with the package name', async () => {
+    // The positive control for the prefix pitfall: `pkg-keys/` is not inside
+    // `pkg/`, although the string `.../pkg-keys/k.json` starts with `.../pkg`.
+    const parent = await mkdtemp(join(tmpdir(), 'openmini-sign-'));
+    const dir = join(parent, 'pkg');
+    await mkdir(dir);
+    await writeFile(join(dir, 'openmini.json'), MANIFEST, 'utf8');
+    await writeFile(join(dir, 'index.html'), '<!doctype html><title>x</title>', 'utf8');
+    await mkdir(join(parent, 'pkg-keys'));
+    const keyFile = join(parent, 'pkg-keys', 'signing.key.json');
+    await generateKeyFile({ out: keyFile });
+
+    const result = await signPackage({ packageDir: dir, keyFile });
+    expect(result.fileCount).toBe(2);
+    expect((await verifyPackage(dir)).ok).toBe(true);
+  });
+
+  it('accepts an ordinary key file outside the package', async () => {
+    const dir = await makePackage();
+    const keyFile = await makeKey();
+
+    const result = await signPackage({ packageDir: dir, keyFile });
+    expect(result.fileCount).toBe(2);
+    expect((await verifyPackage(dir)).ok).toBe(true);
+  });
+});
+
 describe('generateKeyFile', () => {
   it('refuses to overwrite an existing key file without --force', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'openmini-key-'));

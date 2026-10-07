@@ -241,6 +241,21 @@ describe('the built binary', () => {
       expect(result.stderr).toContain('unsigned: __proto__');
     });
 
+    it('exits 1 rather than signing a key file kept inside the package', async () => {
+      // Phase 15 W2, proved where the user meets it. Before the fix this
+      // exited 0, the payload listed `k.json`, and `verify` then reported the
+      // package — private key included — as verified.
+      const dir = await makeProject();
+      expect(runCli(['build', dir]).status).toBe(0);
+      const keyFile = join(dir, 'dist', 'k.json');
+      expect(runCli(['keygen', '--out', keyFile]).status).toBe(0);
+
+      const result = runCli(['sign', join(dir, 'dist'), '--key', keyFile]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('key file is inside the package directory');
+      expect(existsSync(join(dir, 'dist', 'openmini.sig.json'))).toBe(false);
+    });
+
     it('exits 1 when signing without --key', async () => {
       const dir = await makeProject();
       const result = runCli(['sign', dir]);

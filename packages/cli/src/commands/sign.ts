@@ -8,8 +8,8 @@ import {
   signIntegrityPayload,
   SIGNATURE_FILENAME,
 } from '@openmini/shared';
-import { readFile, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { readFile, realpath, writeFile } from 'node:fs/promises';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { digestPackageFiles, PackageFilesError } from '../packageFiles.js';
 import { KEY_FILE_VERSION } from './keygen.js';
 
@@ -90,6 +90,36 @@ async function readKeyFile(
   }
 }
 
+/**
+ * Refuses a key file that lives inside the package being signed.
+ *
+ * The package walk covers every file under `packageDir`, so a key kept there
+ * would be signed into the package and shipped with it, and `verify` would
+ * then report it as covered — the private key published by the very step
+ * meant to attest the package. Checked before anything is digested.
+ *
+ * Both paths exist by now (the key file has just been read), so both go
+ * through `realpath`: a symlinked spelling of the package, or of a folder in
+ * it, is still recognised. The containment test is the one `build` uses for
+ * `--out`, on whole path segments: `..`, a path under `..`, or an absolute
+ * path (another Windows drive) is outside, and anything else is inside. A
+ * string-prefix comparison would also refuse a sibling such as `pkg-keys/`
+ * next to `pkg/`. `relative` compares case-insensitively on Windows.
+ */
+async function refuseKeyInsidePackage(packageDir: string, keyFile: string): Promise<void> {
+  const [realPackageDir, realKeyFile] = await Promise.all([
+    realpath(packageDir),
+    realpath(keyFile),
+  ]);
+  const rel = relative(realPackageDir, realKeyFile);
+  const outside = rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  if (!outside) {
+    throw new SignError(
+      `key file is inside the package directory: ${keyFile}\nSigning would cover it and ship the private key with the package. Keep the key outside ${packageDir}.`,
+    );
+  }
+}
+
 export async function signPackage(options: SignOptions): Promise<SignResult> {
   const packageDir = resolve(options.packageDir);
 
@@ -110,7 +140,9 @@ export async function signPackage(options: SignOptions): Promise<SignResult> {
   }
   const manifest = manifestResult.manifest;
 
-  const { privateKeyPkcs8, spki } = await readKeyFile(resolve(options.keyFile));
+  const keyFile = resolve(options.keyFile);
+  const { privateKeyPkcs8, spki } = await readKeyFile(keyFile);
+  await refuseKeyInsidePackage(packageDir, keyFile);
 
   let files;
   try {

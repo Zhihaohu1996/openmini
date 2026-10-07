@@ -1,5 +1,6 @@
 import { bytesToBase64, generateSigningKeyPair, INTEGRITY_ALGORITHM } from '@openmini/shared';
-import { rename, rm, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, open, rename, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 /**
@@ -111,13 +112,77 @@ export async function generateKeyFile(options: KeygenOptions): Promise<KeygenRes
  * it never collides with the next attempt.
  */
 async function replaceKeyFile(keyFile: string, serialized: string): Promise<void> {
+  const targetExists = await failAsTheInPlaceOpenDid(keyFile);
   const temp = `${keyFile}.${crypto.randomUUID()}.tmp`;
   try {
     await writeFile(temp, serialized, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    await removeTemp(temp);
+    // With no target, the old open would have tried to create it in this
+    // same folder and failed the same way, so the error names the path the
+    // caller asked for, not the temp file's.
+    throw targetExists ? error : renamedPath(error, temp, keyFile);
+  }
+  try {
     await rename(temp, keyFile);
   } catch (error) {
-    // Best effort, so the error reported is the one that caused the failure.
-    await rm(temp, { force: true }).catch(() => undefined);
+    await removeTemp(temp);
     throw error;
   }
+}
+
+/**
+ * Write-only, and neither creating nor truncating: the same access the old
+ * `w` open asked for, so a write-only key still passes, without its side
+ * effects. `O_NOFOLLOW` and `O_NONBLOCK` cover a symlink or FIFO swapped in
+ * after the `lstat`; Windows defines neither, although the types say both
+ * are numbers.
+ */
+const PROBE_FLAGS = constants.O_WRONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
+
+/**
+ * Fails the way the old in-place open of the target did, wherever that
+ * failure did not depend on the in-place write itself, so `--force` keeps
+ * its error messages. Returns whether anything is at the path.
+ *
+ * Nothing here writes to the target. A directory is reported with the
+ * message the old open gave, because the probe cannot produce it: Windows
+ * opens a directory write-only without complaint. A regular file is opened
+ * with `PROBE_FLAGS` and closed at once, so a read-only or locked key fails
+ * with the old open's own error. A symlink or special file is not checked.
+ * The rename replaces it, and any old failure there came from following
+ * the link or writing in place: classes D4 and D5 in the Phase 15 plan.
+ */
+async function failAsTheInPlaceOpenDid(keyFile: string): Promise<boolean> {
+  let entry;
+  try {
+    entry = await lstat(keyFile);
+  } catch {
+    return false;
+  }
+  if (entry.isDirectory()) {
+    throw Object.assign(new Error(`EISDIR: illegal operation on a directory, open '${keyFile}'`), {
+      code: 'EISDIR',
+      syscall: 'open',
+      path: keyFile,
+    });
+  }
+  if (entry.isFile()) {
+    const handle = await open(keyFile, PROBE_FLAGS);
+    await handle.close();
+  }
+  return true;
+}
+
+/** Best effort, so the error reported is the one that caused the failure. */
+async function removeTemp(temp: string): Promise<void> {
+  await rm(temp, { force: true }).catch(() => undefined);
+}
+
+function renamedPath(error: unknown, from: string, to: string): unknown {
+  if (error instanceof Error && (error as { path?: unknown }).path === from) {
+    error.message = error.message.split(from).join(to);
+    (error as { path?: unknown }).path = to;
+  }
+  return error;
 }

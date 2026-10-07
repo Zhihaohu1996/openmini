@@ -5,6 +5,7 @@ import {
   lstat,
   mkdtemp,
   mkdir,
+  open,
   readdir,
   readFile,
   rm,
@@ -416,4 +417,88 @@ describe('generateKeyFile', () => {
     expect(signed.keyId).toBe(replaced.keyId);
     expect((await verifyPackage(pkg)).ok).toBe(true);
   });
+
+  // --force replaces the key through a temp file, but its failures keep the
+  // messages the old in-place open gave, wherever that open did not depend
+  // on the in-place write itself. Phase 15's plan lists the classes that may
+  // differ (D1-D6); none of the cases below is one of them.
+  const messageOf = (promise: Promise<unknown>): Promise<string | null> =>
+    promise.then(
+      () => null,
+      (error: Error) => error.message,
+    );
+
+  it('fails --force into a missing folder exactly as it fails without --force', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'openmini-key-'));
+    const out = join(dir, 'missing', 'k.json');
+
+    const plain = await messageOf(generateKeyFile({ out }));
+    const forced = await messageOf(generateKeyFile({ out, force: true }));
+
+    expect(plain).toMatch(/^ENOENT: /);
+    expect(forced).toBe(plain);
+    expect(await readdir(dir)).toEqual([]);
+  });
+
+  it('fails --force under a parent that is a file exactly as it fails without --force', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'openmini-key-'));
+    await writeFile(join(dir, 'parent'), 'not a folder\n', 'utf8');
+    const out = join(dir, 'parent', 'k.json');
+
+    const plain = await messageOf(generateKeyFile({ out }));
+    const forced = await messageOf(generateKeyFile({ out, force: true }));
+
+    expect(plain).not.toBeNull();
+    expect(forced).toBe(plain);
+    expect(await readdir(dir)).toEqual(['parent']);
+  });
+
+  it('fails --force onto a directory with the EISDIR the old in-place open gave', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'openmini-key-'));
+    const out = join(dir, 'k.json');
+    await mkdir(out);
+
+    await expect(generateKeyFile({ out, force: true })).rejects.toMatchObject({
+      code: 'EISDIR',
+      syscall: 'open',
+      path: out,
+      message: `EISDIR: illegal operation on a directory, open '${out}'`,
+    });
+    expect(await readdir(out)).toEqual([]);
+    expect(await readdir(dir)).toEqual(['k.json']);
+  });
+
+  // Root can write a read-only file, so the old open succeeded there too.
+  it.runIf(process.getuid?.() !== 0)(
+    'fails --force onto a read-only key file as the old in-place open did, keeping the key',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'openmini-key-'));
+      const out = join(dir, 'k.json');
+      await generateKeyFile({ out });
+      await chmod(out, 0o444);
+      const before = await readFile(out);
+
+      // The old --force write opened the target with `w`. On a read-only
+      // file that open fails before it can truncate anything, so trying it
+      // here is safe, and gives the exact error to match.
+      const legacy = await open(out, 'w').then(
+        async (handle) => {
+          await handle.close();
+          return null;
+        },
+        (error: Error & { code?: string }) => error,
+      );
+      expect(legacy).not.toBeNull();
+
+      await expect(generateKeyFile({ out, force: true })).rejects.toMatchObject({
+        code: legacy?.code,
+        syscall: 'open',
+        path: out,
+        message: legacy?.message,
+      });
+      expect(await readFile(out)).toEqual(before);
+      expect(await readdir(dir)).toEqual(['k.json']);
+      await chmod(out, 0o644);
+    },
+  );
 });

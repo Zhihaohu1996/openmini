@@ -49,6 +49,17 @@ describe('choosing where to read the configuration from', () => {
     );
     expect(readTrustConfigSource('?trust=../../etc/passwd')).toBe(`/${TRUST_CONFIG_FILENAME}`);
   });
+
+  it.each(['constructor', 'toString', 'hasOwnProperty', 'valueOf', '__proto__'])(
+    'treats ?trust=%s as not on the allowlist, and reads the default',
+    (name) => {
+      // Phase 15 W5. These are inherited, not listed: a bare lookup answered
+      // a function (or Object.prototype for __proto__) instead of falling back.
+      const source = readTrustConfigSource(`?trust=${name}`);
+      expect(typeof source).toBe('string');
+      expect(source).toBe(`/${TRUST_CONFIG_FILENAME}`);
+    },
+  );
 });
 
 describe('a configuration the validator accepts', () => {

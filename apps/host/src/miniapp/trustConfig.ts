@@ -53,7 +53,14 @@ export type TrustConfigSourceName = keyof typeof TRUST_CONFIG_SOURCES;
 
 export function readTrustConfigSource(search: string): string {
   const requested = new URLSearchParams(search).get('trust') ?? 'default';
-  return TRUST_CONFIG_SOURCES[requested as TrustConfigSourceName] ?? TRUST_CONFIG_SOURCES.default;
+  // Own properties only. The table is a plain object literal, so a bare
+  // lookup of `?trust=constructor` (or `toString`, or `__proto__`) answered
+  // an inherited function or `Object.prototype` rather than missing, and the
+  // `??` fallback never ran: the allowlist let a non-string through as a
+  // source, and the host fetched its stringified form.
+  return Object.hasOwn(TRUST_CONFIG_SOURCES, requested)
+    ? TRUST_CONFIG_SOURCES[requested as TrustConfigSourceName]
+    : TRUST_CONFIG_SOURCES.default;
 }
 
 /**

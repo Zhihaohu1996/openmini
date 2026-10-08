@@ -1,0 +1,9 @@
+# Phase 15 R1: check every text file out with LF, whatever core.autocrlf says.
+#
+# Every blob in the repository is already LF. Without this file, a checkout with
+# core.autocrlf=true (Git for Windows sets it system-wide) rewrites the working
+# tree as CRLF. That breaks more than `prettier --check`: hello-remote's
+# index.html pins its inline <script> with a sha256 CSP source computed over the
+# LF bytes, and a CRLF copy of the same script hashes differently, so the
+# browser would silently refuse to run it. See docs/plans/phase-15.md.
+* text=auto eol=lf

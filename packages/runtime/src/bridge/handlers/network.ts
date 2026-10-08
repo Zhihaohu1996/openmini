@@ -110,7 +110,12 @@ function readParams(params: unknown): NetworkFetchRequest {
     ) {
       throw new BridgeInvalidParamsError('"headers" must be an object');
     }
-    headers = {};
+    // Null-prototype, so every header name is an ordinary own property. On a
+    // plain `{}`, `headers['__proto__'] = value` reaches the inherited setter,
+    // which ignores a string, and a header the Mini App legitimately sent
+    // vanished without an error. `fetch` reads a header record by its own
+    // keys, so the prototype makes no other difference.
+    headers = Object.create(null) as Record<string, string>;
     for (const [name, value] of Object.entries(record.headers as Record<string, unknown>)) {
       if (typeof value !== 'string') {
         throw new BridgeInvalidParamsError(`header "${name}" must have a string value`);
@@ -197,7 +202,9 @@ function resolveBody(
 }
 
 function collectResponseHeaders(response: Response): Record<string, string> {
-  const headers: Record<string, string> = {};
+  // Null-prototype for the same reason as the request map in `readParams`:
+  // a response header named `__proto__` is otherwise dropped on assignment.
+  const headers = Object.create(null) as Record<string, string>;
   response.headers.forEach((value, name) => {
     headers[name.toLowerCase()] = value;
   });

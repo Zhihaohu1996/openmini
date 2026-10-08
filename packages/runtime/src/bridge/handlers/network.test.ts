@@ -295,6 +295,65 @@ describe('network.fetch header contract', () => {
   });
 });
 
+describe('network.fetch prototype-named headers', () => {
+  // Phase 15 W4. `__proto__` and `constructor` are legal header names. The
+  // fixtures are built with JSON.parse, never an object literal: in a literal,
+  // `__proto__:` is the prototype-setter form and never becomes an own key.
+  type HeaderMap = Record<string, string>;
+
+  it('passes a request header named __proto__ through as an ordinary header', async () => {
+    const { fetch, fetchImpl } = setup();
+    const headers = JSON.parse('{"__proto__":"from-app"}') as HeaderMap;
+
+    await fetch({ url: 'https://api.example.com/', headers }, CTX);
+
+    const sent = lastInit(fetchImpl).headers as HeaderMap;
+    expect(Object.hasOwn(sent, '__proto__')).toBe(true);
+    expect(sent['__proto__']).toBe('from-app');
+  });
+
+  it('passes constructor and toString through as ordinary headers, as before', async () => {
+    const { fetch, fetchImpl } = setup();
+    const headers = JSON.parse('{"Constructor":"c","toString":"t"}') as HeaderMap;
+
+    await fetch({ url: 'https://api.example.com/', headers }, CTX);
+
+    const sent = lastInit(fetchImpl).headers as HeaderMap;
+    expect(Object.keys(sent).sort()).toEqual(['constructor', 'tostring']);
+    expect(sent['constructor']).toBe('c');
+    expect(sent['tostring']).toBe('t');
+  });
+
+  it('still refuses a blocked header alongside __proto__, before any fetch', async () => {
+    const { fetch, fetchImpl } = setup();
+    const headers = JSON.parse('{"__proto__":"x","Cookie":"y"}') as HeaderMap;
+
+    await expect(fetch({ url: 'https://api.example.com/', headers }, CTX)).rejects.toThrow(
+      /controlled by the host/,
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a response header named __proto__ as an ordinary header', async () => {
+    // A header list, not a record, so the name reaches the Response intact.
+    const response = new Response('ok', {
+      headers: [
+        ['__proto__', 'from-server'],
+        ['x-b', '2'],
+      ],
+    });
+    const { fetch } = setup({}, response);
+
+    const result = (await fetch({ url: 'https://api.example.com/' }, CTX)) as {
+      headers: HeaderMap;
+    };
+
+    expect(Object.hasOwn(result.headers, '__proto__')).toBe(true);
+    expect(result.headers['__proto__']).toBe('from-server');
+    expect(result.headers['x-b']).toBe('2');
+  });
+});
+
 describe('network.fetch host-fixed transport options', () => {
   it('always sends credentials omit, redirect error, referrerPolicy no-referrer', async () => {
     const { fetch, fetchImpl } = setup();
